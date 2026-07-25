@@ -1,0 +1,20 @@
+[Unit]
+Description=8-Ball Pool Game Server
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=dev
+WorkingDirectory=/home/dev/dev/porteghal-app/games/8ball/backend
+Environment=PORT=8082
+Environment=REDIS_HOST=localhost
+Environment=REDIS_PORT=6379
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8082
+ExecStartPre=/bin/bash -c 'cd /home/dev/dev/porteghal-app/games/8ball/frontend && npx vite build'
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/home/dev/dev/porteghal-app/games/8ball/backend:/home/dev/dev/porteghal-app/games/8ball/backend/.deps
+
+[Install]
+WantedBy=multi-user.target
