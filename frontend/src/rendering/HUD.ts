@@ -45,6 +45,10 @@ export class HUD {
   private p1Avatar!: Phaser.GameObjects.Container;
   private p2Avatar!: Phaser.GameObjects.Container;
 
+  // Group ball indicators (visual pocket targets)
+  private p1GroupIndicators!: Phaser.GameObjects.Container;
+  private p2GroupIndicators!: Phaser.GameObjects.Container;
+
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
 
@@ -103,6 +107,10 @@ export class HUD {
     // Avatar containers (initially hidden, created in setNames)
     this.p1Avatar = this.scene.add.container(0, 0).setDepth(20).setVisible(false);
     this.p2Avatar = this.scene.add.container(0, 0).setDepth(20).setVisible(false);
+
+    // Group ball indicators
+    this.p1GroupIndicators = this.scene.add.container(0, 0).setDepth(19).setVisible(false);
+    this.p2GroupIndicators = this.scene.add.container(0, 0).setDepth(19).setVisible(false);
   }
 
   /**
@@ -468,9 +476,80 @@ export class HUD {
   ): void {
     if (!p1Group) {
       this.groupText.setText('');
+      this.p1GroupIndicators.setVisible(false);
+      this.p2GroupIndicators.setVisible(false);
       return;
     }
     this.groupText.setText(`P1: ${p1Group} (${remP1} left) | P2: ${p2Group} (${remP2} left)`);
+
+    // Build visual ball indicators for each player
+    this.buildGroupIndicator(p1Group, p1Pockets, this.p1GroupIndicators, TABLE_X - 70, 350);
+    this.buildGroupIndicator(p2Group, p2Pockets, this.p2GroupIndicators, TABLE_X + TABLE_W + 70, 350);
+    this.p1GroupIndicators.setVisible(true);
+    this.p2GroupIndicators.setVisible(true);
+  }
+
+  /**
+   * Builds a row of colored ball circle indicators for a player's group
+   */
+  private buildGroupIndicator(
+    group: string,
+    pocketed: number[],
+    container: Phaser.GameObjects.Container,
+    x: number, y: number
+  ): void {
+    container.removeAll(true);
+    container.setPosition(x, y);
+
+    // Determine which ball numbers belong to this group
+    const isSolids = group === 'solids';
+    const ballNums = isSolids ? [1, 2, 3, 4, 5, 6, 7] : [9, 10, 11, 12, 13, 14, 15];
+
+    // Colors matching BallRenderer.ts
+    const ballColors: Record<number, string> = {
+      1: '#f1c40f', 2: '#2980b9', 3: '#e74c3c', 4: '#8e44ad',
+      5: '#e67e22', 6: '#27ae60', 7: '#78281f',
+      9: '#f1c40f', 10: '#2980b9', 11: '#e74c3c', 12: '#8e44ad',
+      13: '#e67e22', 14: '#27ae60', 15: '#78281f',
+    };
+
+    const dotR = 7;
+    const spacing = 18;
+    const startX = 0;
+
+    ballNums.forEach((num, idx) => {
+      const isPocketed = pocketed.includes(num);
+      const dx = startX + idx * spacing;
+      const g = this.scene.add.graphics();
+
+      if (isPocketed) {
+        // Pocketed ball: dimmed/dark circle
+        g.fillStyle(0x333333, 0.5);
+        g.fillCircle(dx, 0, dotR);
+        g.lineStyle(1.5, 0x555555, 0.4);
+        g.strokeCircle(dx, 0, dotR);
+      } else {
+        // Active ball: colored circle
+        const color = Phaser.Display.Color.HexStringToColor(ballColors[num] || '#888888').color;
+        g.fillStyle(color, 1);
+        g.fillCircle(dx, 0, dotR);
+        // Highlight shine on top-left
+        g.fillStyle(0xffffff, 0.25);
+        g.fillCircle(dx - 2, -2, dotR * 0.35);
+        // Subtle border
+        g.lineStyle(1, 0x000000, 0.3);
+        g.strokeCircle(dx, 0, dotR);
+
+        // Number text
+        const label = this.scene.add.text(dx, 0, String(num), {
+          font: 'bold 8px Arial, sans-serif',
+          color: isSolids || num > 8 ? '#ffffff' : '#ffffff',
+        }).setOrigin(0.5, 0.5);
+        container.add(label);
+      }
+
+      container.add(g);
+    });
   }
 
   public showGameOverOverlay(won: boolean): void {
