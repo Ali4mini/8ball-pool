@@ -66,7 +66,6 @@ export class BallRenderer {
     const colors = BALL_COLORS[this.ballSet] || BALL_COLORS.classic;
     const r = BALL_RADIUS;
     const d = BALL_DIAM;
-    const SCALE = 4; // Generate at 4x for crisp rendering on high-DPI
 
     // 1. Generate Ground Shadow Texture
     this.generateShadowTexture(d);
@@ -76,59 +75,57 @@ export class BallRenderer {
       const textureKey = `ball_${num}`;
       if (this.scene.textures.exists(textureKey)) continue;
 
-      // Create high-res canvas texture
-      const canvasTex = this.scene.textures.createCanvas(textureKey, d * SCALE, d * SCALE);
+      const canvasTex = this.scene.textures.createCanvas(textureKey, d, d);
       if (!canvasTex) continue;
 
       const ctx = canvasTex.context;
       const mainColor = colors[num];
-      const sr = r * SCALE; // Scaled radius for drawing
 
-      ctx.clearRect(0, 0, d * SCALE, d * SCALE);
+      ctx.clearRect(0, 0, d, d);
 
       if (num === 0) {
         // ─── CUE BALL ───────────────────────────────
-        this.draw3DSphere(ctx, sr, '#ffffff', '#e2e8f0', '#cbd5e1');
+        this.draw3DSphere(ctx, r, '#ffffff', '#e2e8f0', '#cbd5e1');
         // Red aim spot on cue ball
         ctx.fillStyle = '#dc2626';
         ctx.beginPath();
-        ctx.arc((r + 2) * SCALE, (r - 2) * SCALE, 2 * SCALE, 0, Math.PI * 2);
+        ctx.arc(r + 2, r - 2, 2, 0, Math.PI * 2);
         ctx.fill();
       } else if (num === 8) {
         // ─── 8-BALL ─────────────────────────────────
-        this.draw3DSphere(ctx, sr, '#333333', '#111111', '#000000');
-        this.drawNumberPatch(ctx, sr, '8', '#111111');
+        this.draw3DSphere(ctx, r, '#333333', '#111111', '#000000');
+        this.drawNumberPatch(ctx, r, '8', '#111111');
       } else if (num <= 7) {
         // ─── SOLID BALLS (1-7) ──────────────────────
         const lighterColor = this.adjustColor(mainColor, 40);
         const darkerColor = this.adjustColor(mainColor, -50);
-        this.draw3DSphere(ctx, sr, lighterColor, mainColor, darkerColor);
-        this.drawNumberPatch(ctx, sr, String(num), '#111111');
+        this.draw3DSphere(ctx, r, lighterColor, mainColor, darkerColor);
+        this.drawNumberPatch(ctx, r, String(num), '#111111');
       } else {
         // ─── STRIPE BALLS (9-15) ────────────────────
         // Base 3D White Sphere
-        this.draw3DSphere(ctx, sr, '#ffffff', '#f1f5f9', '#cbd5e1');
+        this.draw3DSphere(ctx, r, '#ffffff', '#f1f5f9', '#cbd5e1');
 
         // Colored Stripe Band
         ctx.save();
         ctx.beginPath();
-        ctx.arc(sr, sr, sr - 0.5, 0, Math.PI * 2);
+        ctx.arc(r, r, r - 0.5, 0, Math.PI * 2);
         ctx.clip();
 
-        const stripeGrad = ctx.createLinearGradient(0, sr - 7 * SCALE, 0, sr + 7 * SCALE);
+        const stripeGrad = ctx.createLinearGradient(0, r - 7, 0, r + 7);
         stripeGrad.addColorStop(0, this.adjustColor(mainColor, 20));
         stripeGrad.addColorStop(0.5, mainColor);
         stripeGrad.addColorStop(1, this.adjustColor(mainColor, -40));
 
         ctx.fillStyle = stripeGrad;
-        ctx.fillRect(0, sr - 6.5 * SCALE, d * SCALE, 13 * SCALE);
+        ctx.fillRect(0, r - 6.5, d, 13);
         ctx.restore();
 
-        this.drawNumberPatch(ctx, sr, String(num), '#111111');
+        this.drawNumberPatch(ctx, r, String(num), '#111111');
       }
 
       // ─── TOP GLOSS SPECULAR HIGHLIGHT ─────────────
-      this.drawGlossHighlight(ctx, sr);
+      this.drawGlossHighlight(ctx, r);
 
       canvasTex.refresh();
     }
@@ -194,7 +191,7 @@ export class BallRenderer {
 
     // Crisp number text
     ctx.fillStyle = textColor;
-    ctx.font = `bold ${Math.round(9 * 4)}px Arial, sans-serif`;
+    ctx.font = 'bold 9px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, r, r + 0.5);
@@ -276,7 +273,6 @@ export class BallRenderer {
       } as any);
 
       img.setDepth(2);
-      img.setDisplaySize(BALL_DIAM, BALL_DIAM);
 
       const bd: BallData = { number: num, sprite: img };
       this.ballMap.set(num, bd);
@@ -349,7 +345,6 @@ export class BallRenderer {
       enableSleeping: false, sleepThreshold: Infinity,
     } as any);
     img.setDepth(2);
-    img.setDisplaySize(BALL_DIAM, BALL_DIAM);
 
     this.cueBall = { number: 0, sprite: img };
     this.ballMap.set(0, this.cueBall);
