@@ -266,10 +266,10 @@ export class BallRenderer {
       // 2. Create Matter Physics Ball Image
       const img = this.scene.matter.add.image(x, y, `ball_${num}`, undefined, {
         shape: { type: 'circle', radius: BALL_RADIUS },
-        restitution: 0.85, friction: 0.03, frictionAir: 0.025,
-        frictionStatic: 0.02, density: 0.005, slop: 0.05,
+        restitution: 0.9, friction: 0.02, frictionAir: 0.018,
+        frictionStatic: 0.01, density: 0.005, slop: 0.05,
         label: `ball_${num}`, isBullet: true,
-        enableSleeping: true, sleepThreshold: 60,
+        enableSleeping: false, sleepThreshold: Infinity,
       } as any);
 
       img.setDepth(2);
@@ -339,10 +339,10 @@ export class BallRenderer {
 
     const img = this.scene.matter.add.image(CUE_SPOT_X, CUE_SPOT_Y, 'ball_0', undefined, {
       shape: { type: 'circle', radius: BALL_RADIUS },
-      restitution: 0.85, friction: 0.03, frictionAir: 0.025,
-      frictionStatic: 0.02, density: 0.005, slop: 0.05,
+      restitution: 0.9, friction: 0.02, frictionAir: 0.018,
+      frictionStatic: 0.01, density: 0.005, slop: 0.05,
       label: 'ball_0', isBullet: true,
-      enableSleeping: true, sleepThreshold: 60,
+      enableSleeping: false, sleepThreshold: Infinity,
     } as any);
     img.setDepth(2);
 
