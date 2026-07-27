@@ -28,8 +28,12 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
-  // Sim state
+  // Simulation settle state
   private isSimulating = false;
+  private settleFrameCount = 0;
+  private readonly SETTLE_SPEED = 2.0;
+  private readonly SETTLE_FRAMES = 10;
+  private readonly SIM_TIMEOUT = 8000;
   private isLocalShot = true;
   private simStartTime = 0;
   private pocketedBalls: number[] = [];
@@ -72,6 +76,7 @@ export class GameScene extends Phaser.Scene {
     this.cuePocketed = false;
     this.firstContact = null;
     this.isSimulating = false;
+    this.settleFrameCount = 0;
     this.pocketedByPlayer1 = [];
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
@@ -105,6 +110,7 @@ export class GameScene extends Phaser.Scene {
 
     // HUD
     this.hud = new HUD(this);
+    this.hud.setNames(this.player1Id, this.player1Name || LANG.player1, this.player2Id, this.player2Name || LANG.player2);
     this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
     this.setupInput();
     this.setupWebSocket();
@@ -236,11 +242,10 @@ export class GameScene extends Phaser.Scene {
   private drawCueStick(): void {
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
-    if (this.isAiming) {
-      this.hud.cueStick.setAlpha(0);
-      return;
-    }
-    this.hud.drawCueStickAt(cue.x, cue.y, this.aimAngle || 0, 0.3);
+    // During aiming, drawAim handles the cue stick and aim line.
+    // Don't touch alpha here — it would override drawAim's work.
+    if (this.isAiming) return;
+    this.hud.drawCueStickAt(cue.x, cue.y, this.aimAngle || 0, 0.45, 0);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -292,7 +297,7 @@ export class GameScene extends Phaser.Scene {
     if (dist < 5) return;
 
     this.aimAngle = Math.atan2(-dy, -dx);    // slingshot: pull back → ball shoots opposite
-    this.aimPower = Math.min(dist / 10, 20);
+    this.aimPower = Math.min(dist / 10, 14);
 
     this.hud.drawAim(cx, cy, this.aimAngle, this.aimPower);
   }
@@ -310,6 +315,7 @@ export class GameScene extends Phaser.Scene {
     this.isSimulating = true;
     this.isLocalShot = true;
     this.isAiming = false;
+    this.settleFrameCount = 0;
 
     // Hide UI
     this.hud.hideAim();
@@ -334,6 +340,7 @@ export class GameScene extends Phaser.Scene {
     wsClient.send({
       type: 'shot_init',
       angle_deg: (this.aimAngle * 180) / Math.PI,
+      power: this.aimPower,
       cue_ball_position: [cue.x, cue.y],
     });
 
@@ -369,23 +376,31 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.isSimulating) return;
 
-    // Check timeout
-    if (Date.now() - this.simStartTime > 15000) {
+    // Check timeout — reduced from 15s to 8s
+    if (Date.now() - this.simStartTime > this.SIM_TIMEOUT) {
       this.processShotResult();
       return;
     }
 
-    // Check if all balls have settled — process immediately when they do
+    // Settle detection with frame confirmation
+    // Requires SETTLE_FRAMES consecutive frames where ALL balls' speed
+    // is below SETTLE_SPEED. This prevents micro-movement or single-frame
+    // fluctuations from delaying the shot.
     let allSettled = true;
     this.ballRenderer.getAllBalls().forEach((bd) => {
       const matterBody = (bd.sprite.body as any).body;
-      if (!matterBody || (matterBody.speed ?? Infinity) > 0.8) {
+      if (!matterBody || (matterBody.speed ?? Infinity) > this.SETTLE_SPEED) {
         allSettled = false;
       }
     });
 
-    if (allSettled && this.isLocalShot) {
-      this.processShotResult();
+    if (allSettled) {
+      this.settleFrameCount++;
+      if (this.settleFrameCount >= this.SETTLE_FRAMES && this.isLocalShot) {
+        this.processShotResult();
+      }
+    } else {
+      this.settleFrameCount = 0;
     }
 
     // Keep remaining-ball display live during simulation
@@ -549,7 +564,7 @@ export class GameScene extends Phaser.Scene {
       this.player2Name = data.player2_name;
 
       // Update name texts
-      this.hud.setNames(this.player1Name || LANG.player1, this.player2Name || LANG.player2);
+      this.hud.setNames(this.player1Id, this.player1Name || LANG.player1, this.player2Id, this.player2Name || LANG.player2);
 
       // Position balls from server data
       if (data.ball_positions) {
@@ -624,6 +639,7 @@ export class GameScene extends Phaser.Scene {
     this.isLocalShot = false;
     this.isMyTurn = false;
     this.isAiming = false;
+    this.settleFrameCount = 0;
 
     // Reset shot tracking
     this.pocketedBalls = [];

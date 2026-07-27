@@ -35,6 +35,9 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
+  pixelArt: false,
+  // resolution: use type assertion — property exists at runtime but missing from phaser 3.80 types
+  ...({ resolution: Math.min(window.devicePixelRatio || 1, 2) } as any),
   scene: [BootScene, WaitingScene, GameScene, ResultScene],
   input: {
     activePointers: 2,

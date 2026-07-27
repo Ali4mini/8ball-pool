@@ -1,12 +1,21 @@
+# Dependencies
+backend/.deps/
+backend/.venv/
+frontend/node_modules/
+
+# Build output
+frontend/dist/assets/*.map
+
 # Python
 __pycache__/
 *.pyc
 *.pyo
-
-# Frontend build
-frontend/dist/
-frontend/node_modules/
+*.egg-info/
 
 # IDE
 .vscode/
 .idea/
+
+# OS
+.DS_Store
+Thumbs.db
