@@ -31,8 +31,8 @@ export class GameScene extends Phaser.Scene {
   // Simulation settle state
   private isSimulating = false;
   private settleFrameCount = 0;
-  private readonly SETTLE_SPEED = 1.2;
-  private readonly SETTLE_FRAMES = 15;
+  private readonly SETTLE_SPEED = 2.0;
+  private readonly SETTLE_FRAMES = 10;
   private readonly SIM_TIMEOUT = 8000;
   private isLocalShot = true;
   private simStartTime = 0;
