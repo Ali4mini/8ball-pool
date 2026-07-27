@@ -62,42 +62,42 @@ export class HUD {
     const { width: w } = this.scene.scale;
 
     // Info message text (bottom center)
-    this.infoText = this.scene.add.text(w / 2, 550, '', {
-      font: '14px Arial, sans-serif',
+    this.infoText = this.scene.add.text(w / 2, 554, '', {
+      font: '20px Arial, sans-serif',
       color: '#ffffff',
       backgroundColor: '#00000088',
-      padding: { x: 10, y: 4 },
+      padding: { x: 14, y: 6 },
     }).setOrigin(0.5).setDepth(20);
 
     // Turn indicator text (top center)
     this.turnText = this.scene.add.text(w / 2, 14, '', {
-      font: 'bold 16px Arial, sans-serif',
+      font: 'bold 24px Arial, sans-serif',
       color: '#f97316',
     }).setOrigin(0.5).setDepth(20);
 
-    // Player names
+    // Player names (top)
     this.p1NameText = this.scene.add.text(40, 14, 'Player 1', {
-      font: 'bold 14px Arial, sans-serif',
+      font: 'bold 18px Arial, sans-serif',
       color: '#38bdf8',
     }).setDepth(20);
 
     this.p2NameText = this.scene.add.text(w - 40, 14, 'Player 2', {
-      font: 'bold 14px Arial, sans-serif',
+      font: 'bold 18px Arial, sans-serif',
       color: '#f43f5e',
     }).setOrigin(1, 0).setDepth(20);
 
     // Group info text
-    this.groupText = this.scene.add.text(w / 2, 34, '', {
-      font: '12px Arial, sans-serif',
+    this.groupText = this.scene.add.text(w / 2, 38, '', {
+      font: '16px Arial, sans-serif',
       color: '#cbd5e1',
     }).setOrigin(0.5).setDepth(20);
 
     // Foul banner text
     this.foulText = this.scene.add.text(w / 2, 120, '', {
-      font: 'bold 20px Arial, sans-serif',
+      font: 'bold 26px Arial, sans-serif',
       color: '#ef4444',
       backgroundColor: '#000000cc',
-      padding: { x: 16, y: 8 },
+      padding: { x: 20, y: 10 },
     }).setOrigin(0.5).setDepth(30).setVisible(false);
 
     // Avatar containers (initially hidden, created in setNames)
@@ -133,7 +133,7 @@ export class HUD {
     // First letter of name
     const letter = name.charAt(0).toUpperCase();
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.font = 'bold 18px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(letter, size / 2, size / 2 + 0.5);
@@ -411,7 +411,7 @@ export class HUD {
     this.p1Avatar.removeAll(true);
     const p1Img = this.scene.add.image(0, 0, p1Key);
     const p1Label = this.scene.add.text(22, 0, p1Name, {
-      font: 'bold 13px Arial, sans-serif',
+      font: 'bold 16px Arial, sans-serif',
       color: '#38bdf8',
     }).setOrigin(0, 0.5);
     this.p1Avatar.add([p1Img, p1Label]);
@@ -428,7 +428,7 @@ export class HUD {
     this.p2Avatar.removeAll(true);
     const p2Img = this.scene.add.image(0, 0, p2Key);
     const p2Label = this.scene.add.text(22, 0, p2Name, {
-      font: 'bold 13px Arial, sans-serif',
+      font: 'bold 16px Arial, sans-serif',
       color: '#f43f5e',
     }).setOrigin(0, 0.5);
     this.p2Avatar.add([p2Img, p2Label]);
