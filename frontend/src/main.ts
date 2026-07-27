@@ -24,10 +24,10 @@ const config: Phaser.Types.Core.GameConfig = {
     matter: {
       gravity: { x: 0, y: 0 },
       enableSleeping: true,
-      sleepThreshold: 30,
+      sleepThreshold: 60,
       debug: false,
-      positionIterations: 15,
-      velocityIterations: 10,
+      positionIterations: 20,
+      velocityIterations: 15,
     } as any,
   },
   scale: {
