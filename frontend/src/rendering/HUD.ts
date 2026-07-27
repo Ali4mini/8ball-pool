@@ -1,481 +1,490 @@
 /**
- * Heads-Up Display for the 8-ball game.
- * Top-corner player cards show: avatar, username, ball type to pocket.
- * Turn border, aim line, cue stick, power bar, foul text, info text.
+ * Handles HUD UI overlays, player turn headers, power meter, 
+ * cue stick drawing, and aiming trajectory predictions (ghost ball & deflection lines).
  */
 import Phaser from 'phaser';
-import { LANG } from '../lang';
-import { Group } from '../rules';
-import { config as gameCfg } from '../config';
+import {
+  PLAY_L, PLAY_R, PLAY_T, PLAY_B,
+  BALL_RADIUS,
+  TABLE_X, TABLE_W,
+} from '../gameConfig';
 
-// ─── Deterministic avatar color from player ID ──────────────
-const AVATAR_COLORS = [
-  0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6,
-  0x1abc9c, 0xe67e22, 0x2980b9, 0x27ae60, 0xc0392b,
-  0x16a085, 0x8e44ad, 0xd35400, 0x2c3e50, 0xf1c40f,
-];
-
-function hashId(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = ((h << 5) - h) + id.charCodeAt(i);
-  return Math.abs(h);
-}
-
-function avatarColorFor(id: string): number {
-  return AVATAR_COLORS[hashId(id) % AVATAR_COLORS.length];
-}
-
-function avatarLetter(name: string): string {
-  return (name || '?').charAt(0).toUpperCase();
-}
-
-// ─── Ball type icon constants ───────────────────────────────
-const SOLIDS_COLOR = 0xf1c40f;
-const STRIPES_COLOR = 0xf1c40f;
-const EIGHT_COLOR = 0x111111;
-
-export interface PlayerInfo {
-  name: string;
-  id: string;
+export interface TrajectoryHit {
+  type: 'ball' | 'cushion';
+  ghostX: number;
+  ghostY: number;
+  hitBallNumber?: number;
+  hitBallX?: number;
+  hitBallY?: number;
+  targetBallDirX?: number;
+  targetBallDirY?: number;
+  cueDeflectDirX?: number;
+  cueDeflectDirY?: number;
+  reflectionDirX?: number;
+  reflectionDirY?: number;
 }
 
 export class HUD {
   private scene: Phaser.Scene;
 
-  // Player cards
-  private p1Card!: Phaser.GameObjects.Graphics;
-  private p2Card!: Phaser.GameObjects.Graphics;
-  private p1Avatar!: Phaser.GameObjects.Graphics;
-  private p2Avatar!: Phaser.GameObjects.Graphics;
-  private p1AvatarText!: Phaser.GameObjects.Text;
-  private p2AvatarText!: Phaser.GameObjects.Text;
+  // Graphics objects
+  private aimGraphics: Phaser.GameObjects.Graphics;
+  public cueStick: Phaser.GameObjects.Graphics;
+  private powerBarGraphics: Phaser.GameObjects.Graphics;
+
+  // UI Texts
+  private infoText!: Phaser.GameObjects.Text;
+  private turnText!: Phaser.GameObjects.Text;
   private p1NameText!: Phaser.GameObjects.Text;
   private p2NameText!: Phaser.GameObjects.Text;
-
-  // Ball-type indicators (graphics + text per card)
-  private p1BallIcon!: Phaser.GameObjects.Graphics;
-  private p2BallIcon!: Phaser.GameObjects.Graphics;
-  private p1BallText!: Phaser.GameObjects.Text;
-  private p2BallText!: Phaser.GameObjects.Text;
-
-  // Pocketed count
-  private p1PocketedText!: Phaser.GameObjects.Text;
-  private p2PocketedText!: Phaser.GameObjects.Text;
-
-  // Turn indicator dot
-  private turnDot1!: Phaser.GameObjects.Graphics;
-  private turnDot2!: Phaser.GameObjects.Graphics;
-
-  // Turn pill
-  private turnText!: Phaser.GameObjects.Text;
-
-  // Aim / shot
-  aimLine!: Phaser.GameObjects.Graphics;
-  cueStick!: Phaser.GameObjects.Graphics;
-  private powerBar!: Phaser.GameObjects.Graphics;
-  private powerBarBg!: Phaser.GameObjects.Graphics;
-  private powerLabel!: Phaser.GameObjects.Text;
-
-  // Info
-  infoText!: Phaser.GameObjects.Text;
+  private groupText!: Phaser.GameObjects.Text;
   private foulText!: Phaser.GameObjects.Text;
+  private gameOverOverlay!: Phaser.GameObjects.Container;
+
+  // Avatar containers (left and right side of table)
+  private p1Avatar!: Phaser.GameObjects.Container;
+  private p2Avatar!: Phaser.GameObjects.Container;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    this.buildUI();
+
+    this.aimGraphics = scene.add.graphics();
+    this.aimGraphics.setDepth(10);
+    this.cueStick = scene.add.graphics();
+    this.cueStick.setDepth(11);
+    this.powerBarGraphics = scene.add.graphics();
+    this.powerBarGraphics.setDepth(12);
+
+    this.createUIElements();
   }
 
-  // ─── Build all UI elements ────────────────────────────────
-  private buildUI(): void {
-    const { width, height } = this.scene.scale;
-    const cardY = 8;
-    const cardH = 64;
-    const cardW = 160;
-    const avatarR = 14;              // avatar circle radius
-    const avatarXOff = 12;           // avatar left offset within card
-    const avatarY = cardY + 6;       // avatar top
-    const avatarCX = avatarXOff + avatarR;
-    const avatarCY = avatarY + avatarR;
-    const nameX = avatarCX + avatarR + 6;
+  private createUIElements(): void {
+    const { width: w } = this.scene.scale;
 
-    // ── P1 card (left) ──
-    this.p1Card = this.scene.add.graphics();
-
-    // Avatar circle + letter
-    this.p1Avatar = this.scene.add.graphics();
-    this.p1AvatarText = this.scene.add.text(avatarCX, avatarCY, '', {
-      fontSize: '15px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', fontStyle: 'bold',
+    // Info message text (bottom center)
+    this.infoText = this.scene.add.text(w / 2, 550, '', {
+      font: '14px Arial, sans-serif',
       color: '#ffffff',
-    }).setOrigin(0.5);
+      backgroundColor: '#00000088',
+      padding: { x: 10, y: 4 },
+    }).setOrigin(0.5).setDepth(20);
 
-    this.p1NameText = this.scene.add.text(nameX, avatarCY - 6, '', {
-      fontSize: '12px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', fontStyle: 'bold',
-    });
+    // Turn indicator text (top center)
+    this.turnText = this.scene.add.text(w / 2, 14, '', {
+      font: 'bold 16px Arial, sans-serif',
+      color: '#f97316',
+    }).setOrigin(0.5).setDepth(20);
 
-    // Ball type indicator
-    this.p1BallIcon = this.scene.add.graphics();
-    this.p1BallText = this.scene.add.text(avatarXOff, cardY + 40, '', {
-      fontSize: '10px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#cccccc',
-    });
+    // Player names
+    this.p1NameText = this.scene.add.text(40, 14, 'Player 1', {
+      font: 'bold 14px Arial, sans-serif',
+      color: '#38bdf8',
+    }).setDepth(20);
 
-    // Pocketed count
-    this.p1PocketedText = this.scene.add.text(cardW - 8, avatarCY - 6, '', {
-      fontSize: '11px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#888888',
-    }).setOrigin(1, 0.5);
+    this.p2NameText = this.scene.add.text(w - 40, 14, 'Player 2', {
+      font: 'bold 14px Arial, sans-serif',
+      color: '#f43f5e',
+    }).setOrigin(1, 0).setDepth(20);
 
-    // ── P2 card (right) ──
-    const p2x = width - 10 - cardW;
-    this.p2Card = this.scene.add.graphics();
+    // Group info text
+    this.groupText = this.scene.add.text(w / 2, 34, '', {
+      font: '12px Arial, sans-serif',
+      color: '#cbd5e1',
+    }).setOrigin(0.5).setDepth(20);
 
-    this.p2Avatar = this.scene.add.graphics();
-    const p2AvatarCX = p2x + avatarXOff + avatarR;
-    const p2AvatarCY = avatarY + avatarR;
-    this.p2AvatarText = this.scene.add.text(p2AvatarCX, p2AvatarCY, '', {
-      fontSize: '15px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', fontStyle: 'bold',
-      color: '#ffffff',
-    }).setOrigin(0.5);
+    // Foul banner text
+    this.foulText = this.scene.add.text(w / 2, 120, '', {
+      font: 'bold 20px Arial, sans-serif',
+      color: '#ef4444',
+      backgroundColor: '#000000cc',
+      padding: { x: 16, y: 8 },
+    }).setOrigin(0.5).setDepth(30).setVisible(false);
 
-    const p2NameX = p2AvatarCX + avatarR + 6;
-    this.p2NameText = this.scene.add.text(p2NameX, p2AvatarCY - 6, '', {
-      fontSize: '12px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', fontStyle: 'bold',
-    });
-
-    this.p2BallIcon = this.scene.add.graphics();
-    this.p2BallText = this.scene.add.text(p2x + avatarXOff, cardY + 40, '', {
-      fontSize: '10px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#cccccc',
-    });
-
-    this.p2PocketedText = this.scene.add.text(p2x + cardW - 8, p2AvatarCY - 6, '', {
-      fontSize: '11px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#888888',
-    }).setOrigin(1, 0.5);
-
-    // ── Turn indicator dots ──
-    this.turnDot1 = this.scene.add.graphics().setVisible(false);
-    this.turnDot2 = this.scene.add.graphics().setVisible(false);
-
-    // ── Turn pill ──
-    const turnBg = this.scene.add.graphics();
-    turnBg.fillStyle(0xf97316, 0.15);
-    turnBg.fillRoundedRect(width / 2 - 70, 8, 140, 26, 13);
-    turnBg.lineStyle(1, 0xf97316, 0.3);
-    turnBg.strokeRoundedRect(width / 2 - 70, 8, 140, 26, 13);
-    this.turnText = this.scene.add.text(width / 2, 21, '', {
-      fontSize: '12px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#f97316', fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    // ── Info text ──
-    this.infoText = this.scene.add.text(width / 2, height - 14, '', {
-      fontSize: '12px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#888888',
-    }).setOrigin(0.5, 1);
-
-    // ── Power bar ──
-    const pbX = width - 32, pbY = height * 0.3, pbH = height * 0.35;
-    const pbBg = this.scene.add.graphics();
-    pbBg.fillStyle(0x222222, 0.8);
-    pbBg.fillRoundedRect(pbX - 6, pbY, 12, pbH, 6);
-    pbBg.lineStyle(1, 0x444444, 0.5);
-    pbBg.strokeRoundedRect(pbX - 6, pbY, 12, pbH, 6);
-    for (let i = 1; i < 10; i++) {
-      pbBg.fillStyle(0xffffff, 0.05); pbBg.fillRect(pbX - 4, pbY + i * (pbH / 10), 8, 1);
-    }
-    this.powerBarBg = pbBg;
-    this.powerBarBg.setAlpha(0);
-    this.powerBar = this.scene.add.graphics();
-    this.powerBar.setAlpha(0);
-    this.powerLabel = this.scene.add.text(pbX, pbY + pbH + 10, '0%', {
-      fontSize: '10px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#888888',
-    }).setOrigin(0.5, 0).setAlpha(0);
-
-    // ── Aim line + cue stick ──
-    this.aimLine = this.scene.add.graphics();
-    this.aimLine.setAlpha(0.5);
-    this.cueStick = this.scene.add.graphics();
-    this.cueStick.setAlpha(0);
-
-    // ── Foul text ──
-    this.foulText = this.scene.add.text(width / 2, height * 0.35, '', {
-      fontSize: '24px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial', color: '#ff4444', fontStyle: 'bold',
-      backgroundColor: '#000000aa', padding: { x: 16, y: 8 },
-    }).setOrigin(0.5).setAlpha(0);
+    // Avatar containers (initially hidden, created in setNames)
+    this.p1Avatar = this.scene.add.container(0, 0).setDepth(20).setVisible(false);
+    this.p2Avatar = this.scene.add.container(0, 0).setDepth(20).setVisible(false);
   }
 
-  // ─── Draw ball-type icon (circle) ─────────────────────────
-  private drawBallIcon(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, group: Group): void {
-    g.clear();
-    if (group === 'solids') {
-      g.fillStyle(SOLIDS_COLOR, 1);
-      g.fillCircle(x, y, r);
-      g.lineStyle(1, 0xffffff, 0.3);
-      g.strokeCircle(x, y, r);
-    } else if (group === 'stripes') {
-      // White circle with yellow stripe band through middle
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, r);
-      g.fillStyle(STRIPES_COLOR, 1);
-      g.fillRect(x - r, y - r * 0.35, r * 2, r * 0.7);
-      g.lineStyle(1, 0x999999, 0.4);
-      g.strokeCircle(x, y, r);
-      // Thin stripe lines
-      g.lineStyle(1, STRIPES_COLOR, 0.6);
-      g.beginPath(); g.moveTo(x - r, y - r * 0.15); g.lineTo(x + r, y - r * 0.15); g.strokePath();
-      g.beginPath(); g.moveTo(x - r, y + r * 0.15); g.lineTo(x + r, y + r * 0.15); g.strokePath();
-    } else {
-      // 8-ball icon (no group yet)
-      g.fillStyle(EIGHT_COLOR, 1);
-      g.fillCircle(x, y, r);
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(x, y, r * 0.45);
-      g.fillStyle(EIGHT_COLOR, 1);
-      g.fillCircle(x, y, r * 0.25);
-      g.lineStyle(1, 0xffffff, 0.2);
-      g.strokeCircle(x, y, r);
-    }
-  }
-
-  // ─── Draw avatar circle ───────────────────────────────────
-  private drawAvatar(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number, color: number): void {
-    g.clear();
-    g.fillStyle(color, 1);
-    g.fillCircle(x, y, r);
-    g.lineStyle(1.5, 0xffffff, 0.15);
-    g.strokeCircle(x, y, r);
-  }
-
-  // ─── Set player names + generate avatars ──────────────────
-  setNames(p1Id: string, p1Name: string, p2Id: string, p2Name: string): void {
-    const cardY = 8;
-    const avatarR = 14;
-    const avatarXOff = 12;
-    const avatarY = cardY + 6;
-    const avatarCX = avatarXOff + avatarR;
-    const avatarCY = avatarY + avatarR;
-
-    // P1 avatar
-    const c1 = avatarColorFor(p1Id);
-    this.drawAvatar(this.p1Avatar, avatarCX, avatarCY, avatarR, c1);
-    this.p1AvatarText.setText(avatarLetter(p1Name));
-
-    // P2 avatar
-    const { width } = this.scene.scale;
-    const cardW = 160;
-    const p2x = width - 10 - cardW;
-    const p2AvatarCX = p2x + avatarXOff + avatarR;
-    const p2AvatarCY = avatarY + avatarR;
-    const c2 = avatarColorFor(p2Id);
-    this.drawAvatar(this.p2Avatar, p2AvatarCX, p2AvatarCY, avatarR, c2);
-    this.p2AvatarText.setText(avatarLetter(p2Name));
-
-    // Names
-    this.p1NameText.setText(p1Name || LANG.player1);
-    this.p2NameText.setText(p2Name || LANG.player2);
-  }
-
-  // ─── Turn indicator ───────────────────────────────────────
-  updateTurnUI(myPlayerNum: number, isMyTurn: boolean): void {
-    const { width } = this.scene.scale;
-    const cardY = 8; const cardH = 64; const cardW = 160;
-    const p2x = width - 10 - cardW;
-    const activeNum = isMyTurn ? myPlayerNum : (myPlayerNum === 1 ? 2 : 1);
-
-    // Card borders
-    this.p1Card.clear();
-    this.p1Card.fillStyle(0x000000, 0.35);
-    this.p1Card.fillRoundedRect(10, cardY, cardW, cardH, 10);
-    this.p1Card.lineStyle(2, activeNum === 1 ? 0xf97316 : 0x444444, activeNum === 1 ? 0.8 : 0.3);
-    this.p1Card.strokeRoundedRect(10, cardY, cardW, cardH, 10);
-
-    this.p2Card.clear();
-    this.p2Card.fillStyle(0x000000, 0.35);
-    this.p2Card.fillRoundedRect(p2x, cardY, cardW, cardH, 10);
-    this.p2Card.lineStyle(2, activeNum === 2 ? 0xf97316 : 0x444444, activeNum === 2 ? 0.8 : 0.3);
-    this.p2Card.strokeRoundedRect(p2x, cardY, cardW, cardH, 10);
-
-    this.p1NameText.setColor(activeNum === 1 ? '#f97316' : '#888888');
-    this.p2NameText.setColor(activeNum === 2 ? '#f97316' : '#888888');
-
-    // Turn dot
-    const dotR = 5;
-    this.turnDot1.clear(); this.turnDot2.clear();
-    if (activeNum === 1) {
-      this.turnDot1.fillStyle(0xf97316, 0.9);
-      this.turnDot1.fillCircle(10 + cardW + 8, cardY + cardH / 2, dotR);
-      this.turnDot1.setVisible(true); this.turnDot2.setVisible(false);
-    } else {
-      this.turnDot2.fillStyle(0xf97316, 0.9);
-      this.turnDot2.fillCircle(p2x - 8, cardY + cardH / 2, dotR);
-      this.turnDot2.setVisible(true); this.turnDot1.setVisible(false);
-    }
-  }
-
-  setTurnText(text: string, color: string = '#f97316'): void {
-    this.turnText.setText(text); this.turnText.setColor(color);
-  }
-
-  // ─── Info text ────────────────────────────────────────────
-  setInfo(text: string): void { this.infoText.setText(text); }
-
-  // ─── Foul text ────────────────────────────────────────────
-  showFoul(message: string): void {
-    this.foulText.setText(message);
-    this.foulText.setAlpha(1);
-    this.scene.tweens.add({ targets: this.foulText, alpha: 0, delay: 3000, duration: 500 });
-  }
-
-  // ─── Group & pocket tracking ──────────────────────────────
-  updateGroupDisplay(
-    myPlayerNum: number,
-    player1Group: Group,
-    player2Group: Group,
-    pocketedByPlayer1: number[],
-    pocketedByPlayer2: number[],
-    _remainingP1: number,
-    _remainingP2: number,
+  /**
+   * Generates a circular avatar texture with initials on a colored background
+   */
+  private generateAvatarTexture(
+    name: string,
+    color: number,
+    textureKey: string
   ): void {
-    const cardW = 160;
-    const p2x = this.scene.scale.width - 10 - cardW;
+    if (this.scene.textures.exists(textureKey)) return;
+    const size = 36;
+    const canvasTex = this.scene.textures.createCanvas(textureKey, size, size);
+    if (!canvasTex) return;
+    const ctx = canvasTex.context;
 
-    // P1 ball type
-    this.drawBallIcon(this.p1BallIcon, 20, 52, 7, player1Group);
-    this.p1BallText.setText(
-      player1Group === 'solids' ? 'توپ ساده' :
-      player1Group === 'stripes' ? 'توپ خط‌دار' :
-      '🎱'
-    );
+    // Colored circle background
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
+    ctx.fill();
 
-    // P2 ball type
-    this.drawBallIcon(this.p2BallIcon, p2x + 20, 52, 7, player2Group);
-    this.p2BallText.setText(
-      player2Group === 'solids' ? 'توپ ساده' :
-      player2Group === 'stripes' ? 'توپ خط‌دار' :
-      '🎱'
-    );
+    // Dark border
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-    // Pocketed counts
-    this.p1PocketedText.setText(pocketedByPlayer1.length > 0 ? `${pocketedByPlayer1.length}` : '');
-    this.p2PocketedText.setText(pocketedByPlayer2.length > 0 ? `${pocketedByPlayer2.length}` : '');
+    // First letter of name
+    const letter = name.charAt(0).toUpperCase();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(letter, size / 2, size / 2 + 0.5);
+
+    canvasTex.refresh();
   }
 
-  // ─── Ball-type helper for outside use (e.g. GameScene) ─────
-  setGroupOnly(playerNum: number, group: Group, p1Group: Group, p2Group: Group): void {
-    const cardW = 160;
-    const p2x = this.scene.scale.width - 10 - cardW;
-    const g = playerNum === 1 ? p1Group : p2Group;
+  // ═══════════════════════════════════════════════════════════
+  //  AIMING TRAJECTORY & GHOST BALL PREDICTION
+  // ═══════════════════════════════════════════════════════════
 
-    if (playerNum === 1) {
-      this.drawBallIcon(this.p1BallIcon, 20, 52, 7, g);
-      this.p1BallText.setText(
-        g === 'solids' ? 'توپ ساده' :
-        g === 'stripes' ? 'توپ خط‌دار' : '🎱'
-      );
-    } else {
-      this.drawBallIcon(this.p2BallIcon, p2x + 20, 52, 7, g);
-      this.p2BallText.setText(
-        g === 'solids' ? 'توپ ساده' :
-        g === 'stripes' ? 'توپ خط‌دار' : '🎱'
-      );
+  /**
+   * Calculates ray collision and draws the trajectory line, ghost target ball,
+   * deflection vectors, and cue stick position.
+   */
+  public drawAim(
+    cx: number, cy: number,
+    angleRad: number, power: number,
+    balls: { number: number; x: number; y: number }[]
+  ): void {
+    this.aimGraphics.clear();
+
+    // 1. Raycast collision prediction
+    const hit = this.calculateTrajectory(cx, cy, angleRad, balls);
+
+    if (hit) {
+      const g = this.aimGraphics;
+
+      // A) Main Aiming Line (Cue ball -> Ghost ball)
+      g.lineStyle(4, 0x000000, 0.4);
+      g.lineBetween(cx, cy, hit.ghostX, hit.ghostY);
+      g.lineStyle(2, 0xffffff, 0.95);
+      g.lineBetween(cx, cy, hit.ghostX, hit.ghostY);
+
+      // B) Ghost Target Ball Ring
+      g.fillStyle(0xffffff, 0.15);
+      g.fillCircle(hit.ghostX, hit.ghostY, BALL_RADIUS);
+      g.lineStyle(1.5, 0xffffff, 0.85);
+      g.strokeCircle(hit.ghostX, hit.ghostY, BALL_RADIUS);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillCircle(hit.ghostX, hit.ghostY, 2);
+
+      // C) Collision Path Predictions
+      if (hit.type === 'ball' && hit.hitBallX !== undefined && hit.hitBallY !== undefined) {
+        // --- Target Ball Path Vector ---
+        const tbLen = 90;
+        const tbEndX = hit.hitBallX + (hit.targetBallDirX || 0) * tbLen;
+        const tbEndY = hit.hitBallY + (hit.targetBallDirY || 0) * tbLen;
+
+        g.lineStyle(3, 0x000000, 0.4);
+        g.lineBetween(hit.hitBallX, hit.hitBallY, tbEndX, tbEndY);
+        g.lineStyle(1.5, 0xfacc15, 0.95); // Bright gold for target ball
+        g.lineBetween(hit.hitBallX, hit.hitBallY, tbEndX, tbEndY);
+        g.fillStyle(0xfacc15, 1);
+        g.fillCircle(tbEndX, tbEndY, 3);
+
+        // --- Cue Ball Tangent Deflection Vector ---
+        const cbLen = 60;
+        const cbEndX = hit.ghostX + (hit.cueDeflectDirX || 0) * cbLen;
+        const cbEndY = hit.ghostY + (hit.cueDeflectDirY || 0) * cbLen;
+
+        g.lineStyle(3, 0x000000, 0.3);
+        g.lineBetween(hit.ghostX, hit.ghostY, cbEndX, cbEndY);
+        g.lineStyle(1.5, 0xffffff, 0.7);
+        g.lineBetween(hit.ghostX, hit.ghostY, cbEndX, cbEndY);
+      } else if (hit.type === 'cushion') {
+        // --- Cushion Bounce Vector ---
+        const bounceLen = 100;
+        const bounceEndX = hit.ghostX + (hit.reflectionDirX || 0) * bounceLen;
+        const bounceEndY = hit.ghostY + (hit.reflectionDirY || 0) * bounceLen;
+
+        g.lineStyle(3, 0x000000, 0.4);
+        g.lineBetween(hit.ghostX, hit.ghostY, bounceEndX, bounceEndY);
+        g.lineStyle(1.5, 0x38bdf8, 0.9); // Cyan bounce line
+        g.lineBetween(hit.ghostX, hit.ghostY, bounceEndX, bounceEndY);
+      }
     }
+
+    // 2. Draw Cue Stick positioned behind cue ball
+    this.drawCueStickAt(cx, cy, angleRad, 1, power);
   }
 
-  // ─── Game-over overlay ────────────────────────────────────
-  showGameOverOverlay(won: boolean): void {
-    const { width, height } = this.scene.scale;
-    const overlay = this.scene.add.graphics().setDepth(50);
-    overlay.fillStyle(won ? 0x004400 : 0x440000, 0.4);
-    overlay.fillRect(0, 0, width, height).setAlpha(0);
-    this.scene.tweens.add({ targets: overlay, alpha: 1, duration: 400 });
-    const text = this.scene.add.text(width / 2, height / 2, won ? LANG.youWon : LANG.youLost, {
-      fontSize: '48px', fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      fontStyle: 'bold', color: won ? '#44ff44' : '#ff4444',
-    }).setOrigin(0.5).setDepth(51).setAlpha(0);
-    this.scene.tweens.add({ targets: text, alpha: 1, duration: 500, delay: 300 });
-  }
-
-  // ─── Aim line + cue stick + power bar ─────────────────────
-  drawAim(cx: number, cy: number, angle: number, power: number): void {
-    this.aimLine.clear();
-    this.aimLine.setAlpha(0.7);
-    const lineLen = 400;
-    this.aimLine.lineStyle(1, 0xffffff, 0.2);
-    for (let i = 0; i < 40; i += 2) {
-      const t1 = i / 40, t2 = (i + 1) / 40;
-      this.aimLine.beginPath();
-      this.aimLine.moveTo(cx + Math.cos(angle) * t1 * lineLen, cy + Math.sin(angle) * t1 * lineLen);
-      this.aimLine.lineTo(cx + Math.cos(angle) * t2 * lineLen, cy + Math.sin(angle) * t2 * lineLen);
-      this.aimLine.strokePath();
-    }
-    this.drawCueStickAt(cx, cy, angle, 0.9, power);
-    this.updatePowerBar(power);
-  }
-
-  hideAim(): void {
-    this.aimLine.setAlpha(0);
-    this.powerBar.setAlpha(0);
-    this.powerBarBg.setAlpha(0);
-    this.powerLabel.setAlpha(0);
-    this.cueStick.setAlpha(0);
-  }
-
-  showPowerUI(): void {
-    this.powerBarBg.setAlpha(1);
-    this.powerLabel.setAlpha(1);
-  }
-
-  drawCueStickAt(cx: number, cy: number, angle: number, alpha: number, pullPower: number = 0): void {
+  public hideAim(): void {
+    this.aimGraphics.clear();
     this.cueStick.clear();
-    if (alpha <= 0) { this.cueStick.setAlpha(0); return; }
-    this.cueStick.setAlpha(alpha);
-    const stickAngle = angle + Math.PI;
-    // Stick extends as you pull back — visual feedback of power
-    const stickLen = 200 + pullPower * 6;
-    const pullOffset = pullPower * 2.5;
-    const sx = cx + Math.cos(stickAngle) * (18 + pullOffset), sy = cy + Math.sin(stickAngle) * (18 + pullOffset);
-    const ex = cx + Math.cos(stickAngle) * (stickLen + 18 + pullOffset), ey = cy + Math.sin(stickAngle) * (stickLen + 18 + pullOffset);
-    const midX = (sx + ex) / 2, midY = (sy + ey) / 2;
-    this.cueStick.lineStyle(9, 0x000000, 0.2);
-    this.cueStick.beginPath(); this.cueStick.moveTo(sx + 1, sy + 2); this.cueStick.lineTo(ex + 1, ey + 2); this.cueStick.strokePath();
-    this.cueStick.lineStyle(6, 0xd4a574, 0.9);
-    this.cueStick.beginPath(); this.cueStick.moveTo(sx, sy); this.cueStick.lineTo(midX, midY); this.cueStick.strokePath();
-    this.cueStick.lineStyle(6, 0x5c3317, 0.9);
-    this.cueStick.beginPath(); this.cueStick.moveTo(midX, midY); this.cueStick.lineTo(ex, ey); this.cueStick.strokePath();
-    this.cueStick.lineStyle(4, 0xeeeeee, 0.8);
-    this.cueStick.beginPath(); this.cueStick.moveTo(sx, sy);
-    this.cueStick.lineTo(sx + Math.cos(stickAngle) * 14, sy + Math.sin(stickAngle) * 14); this.cueStick.strokePath();
-    this.cueStick.fillStyle(0x3355aa, 0.6);
-    this.cueStick.fillCircle(sx, sy, 4);
   }
 
-  drawOpponentCueStick(cx: number, cy: number, angleRad: number): void {
-    const stick = this.scene.add.graphics();
-    const stickAngle = angleRad + Math.PI;
-    const stickLen = 200;
-    const sx = cx + Math.cos(stickAngle) * 18, sy = cy + Math.sin(stickAngle) * 18;
-    const ex = cx + Math.cos(stickAngle) * (stickLen + 18), ey = cy + Math.sin(stickAngle) * (stickLen + 18);
-    const midX = (sx + ex) / 2, midY = (sy + ey) / 2;
-    stick.lineStyle(9, 0x000000, 0.25);
-    stick.beginPath(); stick.moveTo(sx + 1, sy + 2); stick.lineTo(ex + 1, ey + 2); stick.strokePath();
-    stick.lineStyle(6, 0xd4a574, 0.95);
-    stick.beginPath(); stick.moveTo(sx, sy); stick.lineTo(midX, midY); stick.strokePath();
-    stick.lineStyle(6, 0x5c3317, 0.95);
-    stick.beginPath(); stick.moveTo(midX, midY); stick.lineTo(ex, ey); stick.strokePath();
-    stick.lineStyle(4, 0xeeeeee, 0.85);
-    stick.beginPath(); stick.moveTo(sx, sy);
-    stick.lineTo(sx + Math.cos(stickAngle) * 14, sy + Math.sin(stickAngle) * 14); stick.strokePath();
-    stick.fillStyle(0x3355aa, 0.7); stick.fillCircle(sx, sy, 4);
-    this.scene.tweens.add({ targets: stick, alpha: 0, duration: 500, onComplete: () => stick.destroy() });
-  }
+  /**
+   * Raycasting calculation vs Target Balls and Table Cushion Boundaries
+   */
+  private calculateTrajectory(
+    cueX: number, cueY: number,
+    angleRad: number,
+    balls: { number: number; x: number; y: number }[]
+  ): TrajectoryHit | null {
+    const dx = Math.cos(angleRad);
+    const dy = Math.sin(angleRad);
 
-  private updatePowerBar(power: number): void {
-    const { width, height } = this.scene.scale;
-    const pbX = width - 32, pbY = height * 0.3, pbH = height * 0.35;
-    const pct = Math.round((power / 14) * 100);
-    this.powerLabel.setText(`${pct}%`);
-    this.powerBar.clear();
-    if (power > 0) {
-      const fillH = (power / 14) * pbH;
-      const color = power > 10 ? 0xff4444 : power > 7 ? 0xff8800 : 0x44ff44;
-      this.powerBar.fillStyle(color, 0.8);
-      this.powerBar.fillRoundedRect(pbX - 6, pbY + pbH - fillH, 12, fillH, 3);
-      this.powerBar.setAlpha(1);
+    const r = BALL_RADIUS;
+    const minX = PLAY_L + r;
+    const maxX = PLAY_R - r;
+    const minY = PLAY_T + r;
+    const maxY = PLAY_B - r;
+
+    let closestDist = Infinity;
+    let bestHit: TrajectoryHit | null = null;
+
+    // ─── A. Check Collisions with Target Balls ───
+    const combinedR = r * 2;
+    const combinedR2 = combinedR * combinedR;
+
+    for (const b of balls) {
+      if (b.number === 0) continue; // Skip cue ball
+
+      const vx = b.x - cueX;
+      const vy = b.y - cueY;
+
+      const t = vx * dx + vy * dy;
+      if (t <= 0) continue; // Target ball is behind or perpendicular
+
+      const d2 = (vx * vx + vy * vy) - (t * t);
+      if (d2 > combinedR2) continue; // Ray misses target ball
+
+      const tImpact = t - Math.sqrt(combinedR2 - d2);
+      if (tImpact > 0 && tImpact < closestDist) {
+        closestDist = tImpact;
+
+        const ghostX = cueX + dx * tImpact;
+        const ghostY = cueY + dy * tImpact;
+
+        // Normal direction from ghost cue ball center to target ball center
+        const nx = (b.x - ghostX) / combinedR;
+        const ny = (b.y - ghostY) / combinedR;
+
+        // Tangent direction (perpendicular to collision normal)
+        let tx = -ny;
+        let ty = nx;
+        const dotT = dx * tx + dy * ty;
+        if (dotT < 0) {
+          tx = -tx;
+          ty = -ty;
+        }
+
+        bestHit = {
+          type: 'ball',
+          ghostX,
+          ghostY,
+          hitBallNumber: b.number,
+          hitBallX: b.x,
+          hitBallY: b.y,
+          targetBallDirX: nx,
+          targetBallDirY: ny,
+          cueDeflectDirX: tx,
+          cueDeflectDirY: ty,
+        };
+      }
     }
+
+    // ─── B. Check Collisions with Cushion Walls ───
+    let wallDist = Infinity;
+    let wallGhostX = 0;
+    let wallGhostY = 0;
+    let reflDx = dx;
+    let reflDy = dy;
+
+    if (dx > 0) {
+      const t = (maxX - cueX) / dx;
+      if (t > 0) {
+        const yAtX = cueY + dy * t;
+        if (yAtX >= minY && yAtX <= maxY && t < wallDist) {
+          wallDist = t; wallGhostX = maxX; wallGhostY = yAtX;
+          reflDx = -dx; reflDy = dy;
+        }
+      }
+    } else if (dx < 0) {
+      const t = (minX - cueX) / dx;
+      if (t > 0) {
+        const yAtX = cueY + dy * t;
+        if (yAtX >= minY && yAtX <= maxY && t < wallDist) {
+          wallDist = t; wallGhostX = minX; wallGhostY = yAtX;
+          reflDx = -dx; reflDy = dy;
+        }
+      }
+    }
+
+    if (dy > 0) {
+      const t = (maxY - cueY) / dy;
+      if (t > 0) {
+        const xAtY = cueX + dx * t;
+        if (xAtY >= minX && xAtY <= maxX && t < wallDist) {
+          wallDist = t; wallGhostX = xAtY; wallGhostY = maxY;
+          reflDx = dx; reflDy = -dy;
+        }
+      }
+    } else if (dy < 0) {
+      const t = (minY - cueY) / dy;
+      if (t > 0) {
+        const xAtY = cueX + dx * t;
+        if (xAtY >= minX && xAtY <= maxX && t < wallDist) {
+          wallDist = t; wallGhostX = xAtY; wallGhostY = minY;
+          reflDx = dx; reflDy = -dy;
+        }
+      }
+    }
+
+    if (wallDist < closestDist) {
+      return {
+        type: 'cushion',
+        ghostX: wallGhostX,
+        ghostY: wallGhostY,
+        reflectionDirX: reflDx,
+        reflectionDirY: reflDy,
+      };
+    }
+
+    return bestHit;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CUE STICK RENDERING
+  // ═══════════════════════════════════════════════════════════
+
+  public drawCueStickAt(cx: number, cy: number, angleRad: number, alpha: number = 1, power: number = 0): void {
+    this.cueStick.clear();
+    this.cueStick.setAlpha(alpha);
+
+    const length = 320;
+    const offsetBack = BALL_RADIUS + 6 + power * 4; // Pull back as power increases
+
+    // Direction pointing AWAY from shot
+    const backAngle = angleRad + Math.PI;
+    const dirX = Math.cos(backAngle);
+    const dirY = Math.sin(backAngle);
+
+    const startX = cx + dirX * offsetBack;
+    const startY = cy + dirY * offsetBack;
+    const endX = startX + dirX * length;
+    const endY = startY + dirY * length;
+
+    // Outer dark shadow
+    this.cueStick.lineStyle(6, 0x000000, 0.35);
+    this.cueStick.lineBetween(startX + 2, startY + 2, endX + 2, endY + 2);
+
+    // Main wood stick body
+    this.cueStick.lineStyle(5, 0xc084fc, 1); // Cue color
+    this.cueStick.lineBetween(startX, startY, endX, endY);
+
+    // Tip & Ferrule
+    const tipX = startX + dirX * 10;
+    const tipY = startY + dirY * 10;
+    this.cueStick.lineStyle(5, 0xffffff, 1);
+    this.cueStick.lineBetween(startX, startY, tipX, tipY);
+  }
+
+  public drawOpponentCueStick(cx: number, cy: number, angleRad: number): void {
+    this.drawCueStickAt(cx, cy, angleRad, 0.8, 4);
+    this.scene.time.delayedCall(600, () => this.hideAim());
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  HUD UI HELPERS
+  // ═══════════════════════════════════════════════════════════
+
+  public setNames(p1Id: string, p1Name: string, p2Id: string, p2Name: string): void {
+    this.p1NameText.setText(p1Name);
+    this.p2NameText.setText(p2Name);
+
+    // Build avatar for player 1 (left side of table)
+    const p1Color = 0x38bdf8;
+    const p1Key = `avatar_${p1Id || 'p1'}`;
+    this.generateAvatarTexture(p1Name, p1Color, p1Key);
+    const p1AvatarX = TABLE_X - 70;
+    const p1AvatarY = 300;
+
+    this.p1Avatar.removeAll(true);
+    const p1Img = this.scene.add.image(0, 0, p1Key);
+    const p1Label = this.scene.add.text(22, 0, p1Name, {
+      font: 'bold 13px Arial, sans-serif',
+      color: '#38bdf8',
+    }).setOrigin(0, 0.5);
+    this.p1Avatar.add([p1Img, p1Label]);
+    this.p1Avatar.setPosition(p1AvatarX, p1AvatarY);
+    this.p1Avatar.setVisible(true);
+
+    // Build avatar for player 2 (right side of table)
+    const p2Color = 0xf43f5e;
+    const p2Key = `avatar_${p2Id || 'p2'}`;
+    this.generateAvatarTexture(p2Name, p2Color, p2Key);
+    const p2AvatarX = TABLE_X + TABLE_W + 70;
+    const p2AvatarY = 300;
+
+    this.p2Avatar.removeAll(true);
+    const p2Img = this.scene.add.image(0, 0, p2Key);
+    const p2Label = this.scene.add.text(22, 0, p2Name, {
+      font: 'bold 13px Arial, sans-serif',
+      color: '#f43f5e',
+    }).setOrigin(0, 0.5);
+    this.p2Avatar.add([p2Img, p2Label]);
+    this.p2Avatar.setPosition(p2AvatarX, p2AvatarY);
+    this.p2Avatar.setVisible(true);
+  }
+
+  public setTurnText(msg: string, color: string = '#f97316'): void {
+    this.turnText.setText(msg).setColor(color);
+  }
+
+  public updateTurnUI(myNum: number, isMyTurn: boolean): void {
+    if (isMyTurn) {
+      this.setTurnText('نوبت شماست', '#f97316');
+    } else {
+      this.setTurnText('نوبت حریف', '#94a3b8');
+    }
+  }
+
+  public setInfo(msg: string): void {
+    this.infoText.setText(msg);
+  }
+
+  public showPowerUI(): void {
+    // Power meter UI handled visually
+  }
+
+  public showFoul(msg: string): void {
+    this.foulText.setText(msg).setVisible(true);
+    this.scene.time.delayedCall(2500, () => this.foulText.setVisible(false));
+  }
+
+  public updateGroupDisplay(
+    myNum: number, p1Group: any, p2Group: any,
+    p1Pockets: number[], p2Pockets: number[],
+    remP1: number, remP2: number
+  ): void {
+    if (!p1Group) {
+      this.groupText.setText('');
+      return;
+    }
+    this.groupText.setText(`P1: ${p1Group} (${remP1} left) | P2: ${p2Group} (${remP2} left)`);
+  }
+
+  public showGameOverOverlay(won: boolean): void {
+    const { width: w, height: h } = this.scene.scale;
+    const bg = this.scene.add.graphics();
+    bg.fillStyle(0x000000, 0.75);
+    bg.fillRect(0, 0, w, h);
+
+    const txt = won ? '🏆 شما برنده شدید!' : 'باختید!';
+    const color = won ? '#22c55e' : '#ef4444';
+
+    this.scene.add.text(w / 2, h / 2, txt, {
+      font: 'bold 36px Arial, sans-serif',
+      color,
+    }).setOrigin(0.5).setDepth(40);
   }
 }

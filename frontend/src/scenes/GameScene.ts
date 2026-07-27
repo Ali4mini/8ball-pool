@@ -10,7 +10,7 @@ import {
   BALL_RADIUS, BALL_DIAM, POCKET_R, CUSHION_W, POCKET_R_INSET,
   CUE_SPOT_X, CUE_SPOT_Y, RACK_X, RACK_Y,
 } from '../gameConfig';
-import { TableRenderer, SKIN_COLORS } from '../rendering/TableRenderer';
+import { TableRenderer } from '../rendering/TableRenderer';
 import { BallRenderer } from '../rendering/BallRenderer';
 import { HUD } from '../rendering/HUD';
 import { PhysicsDebugPanel } from '../rendering/PhysicsDebugPanel';
@@ -296,10 +296,19 @@ export class GameScene extends Phaser.Scene {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 5) return;
 
-    this.aimAngle = Math.atan2(-dy, -dx);    // slingshot: pull back → ball shoots opposite
+    this.aimAngle = Math.atan2(-dy, -dx);    // Slingshot aiming direction
     this.aimPower = Math.min(dist / 10, 14);
 
-    this.hud.drawAim(cx, cy, this.aimAngle, this.aimPower);
+    // Extract active target ball positions for raycasting
+    const ballsList: { number: number; x: number; y: number }[] = [];
+    this.ballRenderer.getAllBalls().forEach((bd) => {
+      if (bd.sprite.visible && bd.sprite.x > 0) {
+        ballsList.push({ number: bd.number, x: bd.sprite.x, y: bd.sprite.y });
+      }
+    });
+
+    // Draw Aim trajectory with Ghost Target Ball and Collision Deflections!
+    this.hud.drawAim(cx, cy, this.aimAngle, this.aimPower, ballsList);
   }
 
   private updatePowerDisplay(): void {
@@ -352,6 +361,9 @@ export class GameScene extends Phaser.Scene {
   //  UPDATE LOOP — settle detection
   // ═══════════════════════════════════════════════════════════
   update(): void {
+    // ─── Keep ball ground shadows aligned under moving balls ───
+    this.ballRenderer.updateShadows();
+
     // Draw cue stick when it's the player's turn
     if (this.isMyTurn && !this.isSimulating) {
       this.drawCueStick();

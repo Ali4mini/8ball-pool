@@ -22,6 +22,7 @@ import {
   POCKET_R_INSET,
   CUSHION_W,
   CUE_SPOT_X,
+  CUE_SPOT_Y,
   RACK_X,
   RACK_Y,
 } from "../gameConfig";
@@ -190,8 +191,8 @@ export class TableRenderer {
           PLAY_H / 2,
           PLAY_W * 0.6,
         );
-        gradient.addColorStop(0, `rgb(${cColor.r}, ${cColor.g}, ${cColor.b})`);
-        gradient.addColorStop(1, `rgb(${eColor.r}, ${eColor.g}, ${eColor.b})`);
+        gradient.addColorStop(0, `rgb(${(cColor as any).r}, ${(cColor as any).g}, ${(cColor as any).b})`);
+        gradient.addColorStop(1, `rgb(${(eColor as any).r}, ${(eColor as any).g}, ${(eColor as any).b})`);
 
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, PLAY_W, PLAY_H);

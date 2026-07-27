@@ -122,6 +122,8 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             # First player creates the room
             await redis.sadd(f"room:{room_id}:players", player_id)
             await redis.hset(f"room:{room_id}:names", player_id, player_name)
+            await redis.expire(f"room:{room_id}:players", 300)
+            await redis.expire(f"room:{room_id}:names", 300)
             player_number = 1
             
             # Register connection
@@ -146,9 +148,11 @@ async def game_websocket(websocket: WebSocket, room_id: str):
         else:
             # Second player joins
             player_number = 2
-            
+
             await redis.sadd(f"room:{room_id}:players", player_id)
             await redis.hset(f"room:{room_id}:names", player_id, player_name)
+            await redis.expire(f"room:{room_id}:players", 300)
+            await redis.expire(f"room:{room_id}:names", 300)
             
             player_connections[player_id] = websocket
             room_connections[room_id][player_id] = websocket

@@ -12,10 +12,9 @@ import { GAME_W, GAME_H } from './gameConfig';
 
 // Fixed game world with margin around the table.
 // Phaser's FIT + CENTER_BOTH handles responsive scaling and centering.
-// Use Canvas renderer for WebView compatibility (some Android WebViews
-// have WebGL issues that cause black screens).
+// Use WebGL for crisp vector rendering with antialiasing.
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.CANVAS,
+  type: Phaser.WEBGL,
   parent: 'game-container',
   width: GAME_W,
   height: GAME_H,
@@ -36,6 +35,9 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   pixelArt: false,
+  antialias: true,
+  antialiasGL: true,
+  roundPixels: false,
   // resolution: use type assertion — property exists at runtime but missing from phaser 3.80 types
   ...({ resolution: Math.min(window.devicePixelRatio || 1, 2) } as any),
   scene: [BootScene, WaitingScene, GameScene, ResultScene],
