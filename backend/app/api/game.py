@@ -41,10 +41,13 @@ async def broadcast_to_room(room_id: str, message: dict, exclude: Optional[str] 
     if room_id in room_connections:
         for pid, ws in room_connections[room_id].items():
             if pid != exclude:
+                # Guard: skip if the player has already disconnected
+                if pid not in player_connections:
+                    continue
                 try:
                     await ws.send_json(message)
                 except Exception as e:
-                    logger.error(f"Failed to broadcast to {pid}: {e}")
+                    logger.warning(f"Broadcast to {pid} failed (likely disconnected): {e}")
 
 
 async def send_credit_callback(state: GameState, winner: str, loser: str):
