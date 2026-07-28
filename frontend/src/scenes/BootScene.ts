@@ -13,6 +13,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Hide the HTML loading screen now that Phaser has actually rendered.
+    const loadingEl = document.getElementById('loading-screen');
+    if (loadingEl) loadingEl.style.display = 'none';
+
     const { width, height } = this.scale;
     const params = new URLSearchParams(window.location.search);
 

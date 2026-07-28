@@ -49,11 +49,10 @@ const config: Phaser.Types.Core.GameConfig = {
   },
 };
 
-// Remove loading screen when game bootstraps
-const loadingEl = document.getElementById('loading-screen');
-if (loadingEl) {
-  loadingEl.style.display = 'none';
-}
+// NOTE: The loading screen (#loading-screen in index.html) is intentionally
+// NOT hidden here. Hiding it at module top-level (before `new Phaser.Game`)
+// leaves a black gap on slow mobile WebViews — the screen is blank from JS
+// load until the first canvas frame. Each scene hides it in its create().
 
 // Lock to landscape on mobile (Android + supported browsers)
 if ((screen?.orientation as any)?.lock) {
