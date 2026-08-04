@@ -1,6 +1,7 @@
 # Dependencies
 backend/.deps/
 backend/.venv/
+.venv/
 frontend/node_modules/
 
 # Build output
