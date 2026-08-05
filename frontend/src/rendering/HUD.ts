@@ -1,7 +1,7 @@
 /**
  * Modern Mobile HUD for 8-Ball Game
- * Features larger high-contrast fonts, readable scorecards,
- * bold group indicators, auto-fading toast notifications,
+ * Features clean top header (Avatars, Names, Group Badges),
+ * 2x font sizes, auto-fading toast notifications,
  * and 🚫 prohibition warnings for illegal target balls.
  */
 import Phaser from "phaser";
@@ -45,19 +45,15 @@ export class HUD {
   private headerContainer!: Phaser.GameObjects.Container;
   private p1CardBg!: Phaser.GameObjects.Graphics;
   private p2CardBg!: Phaser.GameObjects.Graphics;
-  private turnBannerBg!: Phaser.GameObjects.Graphics;
 
   private p1NameText!: Phaser.GameObjects.Text;
   private p2NameText!: Phaser.GameObjects.Text;
   private p1GroupLabel!: Phaser.GameObjects.Text;
   private p2GroupLabel!: Phaser.GameObjects.Text;
-  private turnText!: Phaser.GameObjects.Text;
 
-  // Avatars & Group ball indicators inside Header
+  // Avatars
   private p1AvatarImg?: Phaser.GameObjects.Image;
   private p2AvatarImg?: Phaser.GameObjects.Image;
-  private p1GroupIndicators!: Phaser.GameObjects.Container;
-  private p2GroupIndicators!: Phaser.GameObjects.Container;
 
   // Floating Toast / Banners
   private toastContainer!: Phaser.GameObjects.Container;
@@ -89,87 +85,59 @@ export class HUD {
     const { width: screenW } = this.scene.scale;
     this.headerContainer = this.scene.add.container(0, 0).setDepth(20);
 
-    const headerH = 64;
-
-    // 1. Glassmorphism Top Background Bar
-    const bg = this.scene.add.graphics();
-    bg.fillStyle(0x0a0d14, 0.9);
-    bg.fillRect(0, 0, screenW, headerH);
-    bg.lineStyle(2, 0x1e293b, 1);
-    bg.lineBetween(0, headerH, screenW, headerH);
-    this.headerContainer.add(bg);
-
-    // 2. Player 1 Scorecard (Left)
+    // 1. Player 1 Scorecard (Left)
     this.p1CardBg = this.scene.add.graphics();
-    this.p1NameText = this.scene.add.text(62, 10, "Player 1", {
-      font: "bold 18px Tahoma, Arial, sans-serif",
+    this.p1NameText = this.scene.add.text(80, 8, "Player 1", {
+      font: "bold 36px Tahoma, Arial, sans-serif",
       color: "#38bdf8",
       stroke: "#000000",
-      strokeThickness: 2,
+      strokeThickness: 5,
     });
-    this.p1GroupLabel = this.scene.add.text(62, 36, "", {
-      font: "bold 13px Tahoma, Arial, sans-serif",
+    this.p1GroupLabel = this.scene.add.text(80, 48, "", {
+      font: "bold 26px Tahoma, Arial, sans-serif",
       color: "#cbd5e1",
+      stroke: "#000000",
+      strokeThickness: 4,
     });
-    this.p1GroupIndicators = this.scene.add.container(125, 43);
 
     this.headerContainer.add([
       this.p1CardBg,
       this.p1NameText,
       this.p1GroupLabel,
-      this.p1GroupIndicators,
     ]);
 
-    // 3. Player 2 Scorecard (Right)
+    // 2. Player 2 Scorecard (Right)
     this.p2CardBg = this.scene.add.graphics();
     this.p2NameText = this.scene.add
-      .text(screenW - 62, 10, "Player 2", {
-        font: "bold 18px Tahoma, Arial, sans-serif",
+      .text(screenW - 80, 8, "Player 2", {
+        font: "bold 36px Tahoma, Arial, sans-serif",
         color: "#f43f5e",
         stroke: "#000000",
-        strokeThickness: 2,
+        strokeThickness: 5,
       })
       .setOrigin(1, 0);
     this.p2GroupLabel = this.scene.add
-      .text(screenW - 62, 36, "", {
-        font: "bold 13px Tahoma, Arial, sans-serif",
+      .text(screenW - 80, 48, "", {
+        font: "bold 26px Tahoma, Arial, sans-serif",
         color: "#cbd5e1",
+        stroke: "#000000",
+        strokeThickness: 4,
       })
       .setOrigin(1, 0);
-    this.p2GroupIndicators = this.scene.add.container(screenW - 125, 43);
 
     this.headerContainer.add([
       this.p2CardBg,
       this.p2NameText,
       this.p2GroupLabel,
-      this.p2GroupIndicators,
     ]);
-
-    // 4. Center Turn Badge
-    this.turnBannerBg = this.scene.add.graphics();
-    this.turnBannerBg.fillStyle(0x1e293b, 0.9);
-    this.turnBannerBg.lineStyle(1.5, 0x3b82f6, 1);
-    this.turnBannerBg.fillRoundedRect(screenW / 2 - 80, 12, 160, 38, 19);
-    this.turnBannerBg.strokeRoundedRect(screenW / 2 - 80, 12, 160, 38, 19);
-
-    this.turnText = this.scene.add
-      .text(screenW / 2, 31, "نوبت شماست", {
-        font: "bold 17px Tahoma, Arial, sans-serif",
-        color: "#f97316",
-        stroke: "#000000",
-        strokeThickness: 2,
-      })
-      .setOrigin(0.5);
-
-    this.headerContainer.add([this.turnBannerBg, this.turnText]);
 
     // Foul Banner Text
     this.foulText = this.scene.add
-      .text(screenW / 2, headerH + 35, "", {
-        font: "bold 20px Tahoma, Arial, sans-serif",
+      .text(screenW / 2, 100, "", {
+        font: "bold 32px Tahoma, Arial, sans-serif",
         color: "#ef4444",
         backgroundColor: "#000000ee",
-        padding: { x: 20, y: 8 },
+        padding: { x: 24, y: 10 },
       })
       .setOrigin(0.5)
       .setDepth(30)
@@ -184,20 +152,22 @@ export class HUD {
     const { width: screenW, height: screenH } = this.scene.scale;
 
     this.toastContainer = this.scene.add
-      .container(screenW / 2, screenH - 35)
+      .container(screenW / 2, screenH - 45)
       .setDepth(20)
       .setAlpha(0);
 
     const bg = this.scene.add.graphics();
     bg.fillStyle(0x0f172a, 0.95);
-    bg.lineStyle(1.5, 0x475569, 1);
-    bg.fillRoundedRect(-150, -18, 300, 36, 18);
-    bg.strokeRoundedRect(-150, -18, 300, 36, 18);
+    bg.lineStyle(2, 0x475569, 1);
+    bg.fillRoundedRect(-220, -26, 440, 52, 26);
+    bg.strokeRoundedRect(-220, -26, 440, 52, 26);
 
     this.toastText = this.scene.add
       .text(0, 0, "", {
-        font: "bold 15px Tahoma, Arial, sans-serif",
+        font: "bold 28px Tahoma, Arial, sans-serif",
         color: "#f1f5f9",
+        stroke: "#000000",
+        strokeThickness: 3,
       })
       .setOrigin(0.5);
 
@@ -288,7 +258,6 @@ export class HUD {
     if (hit) {
       const g = this.aimGraphics;
 
-      // Check if target ball is legal
       let isLegal = true;
       if (hit.type === "ball" && hit.hitBallNumber !== undefined) {
         isLegal = this.isTargetBallLegal(
@@ -298,7 +267,7 @@ export class HUD {
         );
       }
 
-      const lineColor = isLegal ? 0xffffff : 0xef4444; // White if legal, Red if illegal
+      const lineColor = isLegal ? 0xffffff : 0xef4444;
       const lineAlpha = isLegal ? 0.95 : 0.85;
 
       // A) Main Aiming Line (Cue ball -> Ghost ball)
@@ -322,7 +291,6 @@ export class HUD {
           hit.hitBallX !== undefined &&
           hit.hitBallY !== undefined
         ) {
-          // Target Ball Path Vector
           const tbLen = 90;
           const tbEndX = hit.hitBallX + (hit.targetBallDirX || 0) * tbLen;
           const tbEndY = hit.hitBallY + (hit.targetBallDirY || 0) * tbLen;
@@ -334,7 +302,6 @@ export class HUD {
           g.fillStyle(0xfacc15, 1);
           g.fillCircle(tbEndX, tbEndY, 3);
 
-          // Cue Ball Deflection Vector
           const cbLen = 60;
           const cbEndX = hit.ghostX + (hit.cueDeflectDirX || 0) * cbLen;
           const cbEndY = hit.ghostY + (hit.cueDeflectDirY || 0) * cbLen;
@@ -344,7 +311,6 @@ export class HUD {
           g.lineStyle(1.5, 0xffffff, 0.7);
           g.lineBetween(hit.ghostX, hit.ghostY, cbEndX, cbEndY);
         } else if (hit.type === "cushion") {
-          // Cushion Bounce Vector
           const bounceLen = 100;
           const bounceEndX = hit.ghostX + (hit.reflectionDirX || 0) * bounceLen;
           const bounceEndY = hit.ghostY + (hit.reflectionDirY || 0) * bounceLen;
@@ -355,7 +321,7 @@ export class HUD {
           g.lineBetween(hit.ghostX, hit.ghostY, bounceEndX, bounceEndY);
         }
       } else {
-        // 🚫 ILLEGAL TARGET WARNING: Draw Prohibition / Cancel Icon
+        // 🚫 ILLEGAL TARGET WARNING
         this.drawCancelIcon(g, hit.ghostX, hit.ghostY, BALL_RADIUS + 3);
         if (hit.hitBallX !== undefined && hit.hitBallY !== undefined) {
           this.drawCancelIcon(g, hit.hitBallX, hit.hitBallY, BALL_RADIUS + 5);
@@ -488,7 +454,7 @@ export class HUD {
         if (xAtY >= minX && xAtY <= maxX && t < wallDist) {
           wallDist = t;
           wallGhostX = xAtY;
-          wallGhostY = minY;
+          wallGhostY = maxY;
           reflDx = dx;
           reflDy = -dy;
         }
@@ -547,20 +513,13 @@ export class HUD {
     this.scene.time.delayedCall(600, () => this.hideAim());
   }
 
-  /**
-   * Evaluates if a target ball is a legal first contact based on 8-ball rules
-   */
-  /**
-   * Evaluates if a target ball is a legal first contact based on 8-ball rules
-   */
   private isTargetBallLegal(
     ballNum: number,
     myGroup: any,
     ownRemaining: number,
   ): boolean {
-    if (ballNum === 0) return false; // Cue ball
+    if (ballNum === 0) return false;
 
-    // Normalize group representation ('solids' / 1 / '1' or 'stripes' / 2 / '2')
     let groupType: "solids" | "stripes" | null = null;
     if (myGroup === "solids" || myGroup === 1 || myGroup === "1") {
       groupType = "solids";
@@ -568,12 +527,10 @@ export class HUD {
       groupType = "stripes";
     }
 
-    // Open Table (Groups not assigned yet)
     if (!groupType) {
-      return ballNum !== 8; // Any ball 1-7 or 9-15 is legal, 8-ball is illegal on open table
+      return ballNum !== 8;
     }
 
-    // Group assigned and player still has group balls remaining on table
     if (ownRemaining > 0) {
       if (groupType === "solids") {
         return ballNum >= 1 && ballNum <= 7;
@@ -582,16 +539,13 @@ export class HUD {
       }
     }
 
-    // Group cleared (0 group balls remaining) -> Player MUST target 8-ball!
     if (ownRemaining === 0) {
       return ballNum === 8;
     }
 
     return true;
   }
-  /**
-   * Draws a red prohibition sign (🚫) over illegal target balls
-   */
+
   private drawCancelIcon(
     g: Phaser.GameObjects.Graphics,
     x: number,
@@ -604,7 +558,7 @@ export class HUD {
     g.lineStyle(3, 0xef4444, 1);
     g.strokeCircle(x, y, radius);
 
-    const offset = radius * 0.707; // cos(45deg)
+    const offset = radius * 0.707;
     g.lineStyle(3, 0xef4444, 1);
     g.lineBetween(x - offset, y - offset, x + offset, y + offset);
   }
@@ -630,15 +584,15 @@ export class HUD {
     const p1Key = `avatar_${p1Id || "p1"}`;
     this.generateAvatarTexture(p1Name, 0x38bdf8, p1Key);
     if (this.p1AvatarImg) this.p1AvatarImg.destroy();
-    this.p1AvatarImg = this.scene.add.image(30, 32, p1Key);
+    this.p1AvatarImg = this.scene.add.image(40, 40, p1Key);
     this.headerContainer.add(this.p1AvatarImg);
 
     const p2Key = `avatar_${p2Id || "p2"}`;
     this.generateAvatarTexture(p2Name, 0xf43f5e, p2Key);
     if (this.p2AvatarImg) this.p2AvatarImg.destroy();
     this.p2AvatarImg = this.scene.add.image(
-      this.scene.scale.width - 30,
-      32,
+      this.scene.scale.width - 40,
+      40,
       p2Key,
     );
     this.headerContainer.add(this.p2AvatarImg);
@@ -650,7 +604,7 @@ export class HUD {
     textureKey: string,
   ): void {
     if (this.scene.textures.exists(textureKey)) return;
-    const size = 40;
+    const size = 64;
     const canvasTex = this.scene.textures.createCanvas(textureKey, size, size);
     if (!canvasTex) return;
     const ctx = canvasTex.context;
@@ -660,32 +614,26 @@ export class HUD {
     ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(0,0,0,0.4)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 3;
     ctx.stroke();
 
     const letter = name.charAt(0).toUpperCase();
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 20px Tahoma, Arial, sans-serif";
+    ctx.font = "bold 32px Tahoma, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(letter, size / 2, size / 2 + 1);
+    ctx.fillText(letter, size / 2, size / 2 + 2);
 
     canvasTex.refresh();
   }
 
   public setTurnText(msg: string, color: string = "#f97316"): void {
-    this.turnText.setText(msg).setColor(color);
+    // No-op (turn badge removed from top)
   }
 
   public updateTurnUI(myNum: number, isMyTurn: boolean): void {
-    if (isMyTurn) {
-      this.setTurnText("نوبت شماست", "#f97316");
-      this.setPowerEnabled(true);
-    } else {
-      this.setTurnText("نوبت حریف", "#94a3b8");
-      this.setPowerEnabled(false);
-    }
+    this.setPowerEnabled(isMyTurn);
   }
 
   public showFoul(msg: string): void {
@@ -705,75 +653,11 @@ export class HUD {
     if (!p1Group) {
       this.p1GroupLabel.setText("");
       this.p2GroupLabel.setText("");
-      this.p1GroupIndicators.setVisible(false);
-      this.p2GroupIndicators.setVisible(false);
       return;
     }
 
     this.p1GroupLabel.setText(p1Group === "solids" ? "تک‌رنگ" : "دو‌رنگ");
     this.p2GroupLabel.setText(p2Group === "solids" ? "تک‌رنگ" : "دو‌رنگ");
-
-    this.buildGroupIndicator(p1Group, p1Pockets, this.p1GroupIndicators, false);
-    this.buildGroupIndicator(p2Group, p2Pockets, this.p2GroupIndicators, true);
-    this.p1GroupIndicators.setVisible(true);
-    this.p2GroupIndicators.setVisible(true);
-  }
-
-  private buildGroupIndicator(
-    group: string,
-    pocketed: number[],
-    container: Phaser.GameObjects.Container,
-    alignRight: boolean,
-  ): void {
-    container.removeAll(true);
-
-    const isSolids = group === "solids";
-    const ballNums = isSolids
-      ? [1, 2, 3, 4, 5, 6, 7]
-      : [9, 10, 11, 12, 13, 14, 15];
-
-    const ballColors: Record<number, string> = {
-      1: "#f1c40f",
-      2: "#2980b9",
-      3: "#e74c3c",
-      4: "#8e44ad",
-      5: "#e67e22",
-      6: "#27ae60",
-      7: "#78281f",
-      9: "#f1c40f",
-      10: "#2980b9",
-      11: "#e74c3c",
-      12: "#8e44ad",
-      13: "#e67e22",
-      14: "#27ae60",
-      15: "#78281f",
-    };
-
-    const dotR = 8;
-    const spacing = 18;
-
-    ballNums.forEach((num, idx) => {
-      const isPocketed = pocketed.includes(num);
-      const dx = alignRight ? -idx * spacing : idx * spacing;
-      const g = this.scene.add.graphics();
-
-      if (isPocketed) {
-        g.fillStyle(0x333333, 0.4);
-        g.fillCircle(dx, 0, dotR);
-        g.lineStyle(1.5, 0x555555, 0.4);
-        g.strokeCircle(dx, 0, dotR);
-      } else {
-        const color = Phaser.Display.Color.HexStringToColor(
-          ballColors[num] || "#888888",
-        ).color;
-        g.fillStyle(color, 1);
-        g.fillCircle(dx, 0, dotR);
-        g.lineStyle(1, 0x000000, 0.4);
-        g.strokeCircle(dx, 0, dotR);
-      }
-
-      container.add(g);
-    });
   }
 
   public showGameOverOverlay(won: boolean): void {
@@ -787,10 +671,10 @@ export class HUD {
 
     this.scene.add
       .text(w / 2, h / 2, txt, {
-        font: "bold 36px Tahoma, Arial, sans-serif",
+        font: "bold 44px Tahoma, Arial, sans-serif",
         color,
         stroke: "#000000",
-        strokeThickness: 3,
+        strokeThickness: 4,
       })
       .setOrigin(0.5)
       .setDepth(40);
