@@ -1,6 +1,6 @@
 /**
  * Manages photorealistic 3D ball textures, dynamic ground drop shadows,
- * Matter physics bodies, and lifecycle (creation, pocketing, respawning).
+ * Matter physics bodies, authentic 3D rolling animations, and lifecycle.
  */
 import Phaser from "phaser";
 import {
@@ -121,7 +121,6 @@ export class BallRenderer {
         this.drawNumberPatch(ctx, r, String(num), "#111111");
       } else {
         // ─── STRIPE BALLS (9-15) ────────────────────
-        // Base 3D White Sphere
         this.draw3DSphere(ctx, r, "#ffffff", "#f1f5f9", "#cbd5e1");
 
         // Colored Stripe Band
@@ -180,9 +179,6 @@ export class BallRenderer {
     canvasTex.refresh();
   }
 
-  /**
-   * Helper: Draws a 3D volumetric sphere using radial gradients
-   */
   private draw3DSphere(
     ctx: CanvasRenderingContext2D,
     r: number,
@@ -190,7 +186,6 @@ export class BallRenderer {
     midColor: string,
     darkColor: string,
   ): void {
-    // 3D volumetric shading - light source top-left
     const grad = ctx.createRadialGradient(
       r * 0.35,
       r * 0.3,
@@ -209,15 +204,11 @@ export class BallRenderer {
     ctx.arc(r, r, r - 0.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Subtle dark outer stroke for crisp edge
     ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
     ctx.lineWidth = 0.8;
     ctx.stroke();
   }
 
-  /**
-   * Helper: Draws white center patch with crisp ball number text
-   */
   private drawNumberPatch(
     ctx: CanvasRenderingContext2D,
     r: number,
@@ -226,13 +217,11 @@ export class BallRenderer {
   ): void {
     const patchR = r * 0.48;
 
-    // White circle patch
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(r, r, patchR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Crisp number text
     ctx.fillStyle = textColor;
     ctx.font = "bold 9px Arial, sans-serif";
     ctx.textAlign = "center";
@@ -240,11 +229,7 @@ export class BallRenderer {
     ctx.fillText(text, r, r + 0.5);
   }
 
-  /**
-   * Helper: Top-left glossy specular shine
-   */
   private drawGlossHighlight(ctx: CanvasRenderingContext2D, r: number): void {
-    // Specular highlight - smaller, more focused, more transparent
     const glossGrad = ctx.createRadialGradient(
       r * 0.35,
       r * 0.3,
@@ -262,7 +247,6 @@ export class BallRenderer {
     ctx.arc(r * 0.35, r * 0.3, r * 0.4, 0, Math.PI * 2);
     ctx.fill();
 
-    // Secondary smaller bright spot
     const spotGrad = ctx.createRadialGradient(
       r * 0.32,
       r * 0.28,
@@ -279,9 +263,6 @@ export class BallRenderer {
     ctx.fill();
   }
 
-  /**
-   * Color lightness adjuster helper
-   */
   private adjustColor(hex: string, percent: number): string {
     const num = parseInt(hex.replace("#", ""), 16);
     const amt = Math.round(2.55 * percent);
@@ -325,7 +306,7 @@ export class BallRenderer {
     }
 
     positions.forEach(([num, x, y]) => {
-      // 1. Create Ground Shadow Sprite (rendered under balls)
+      // 1. Ground Shadow
       const shadow = this.scene.add.image(
         x + 2.5,
         y + 3.5,
@@ -334,8 +315,7 @@ export class BallRenderer {
       shadow.setDepth(1);
       this.shadowMap.set(num, shadow);
 
-      // 2. Create Matter Physics Ball Image
-      // AFTER
+      // 2. Matter Physics Ball Image
       const img = this.scene.matter.add.image(x, y, `ball_${num}`, undefined, {
         shape: { type: "circle", radius: BALL_RADIUS },
         restitution: 0.88,
@@ -343,11 +323,16 @@ export class BallRenderer {
         frictionAir: 0.012,
         frictionStatic: 0.01,
         density: 0.005,
-        slop: 0, // 0 slop ensures exact surface contact without overlapping boundaries
+        slop: 0,
         label: `ball_${num}`,
         enableSleeping: false,
       } as any);
       img.setDepth(2);
+
+      // Natural random starting rotation for racked balls
+      if (num !== 0) {
+        img.setRotation((Phaser.Math.Between(0, 360) * Math.PI) / 180);
+      }
 
       const bd: BallData = { number: num, sprite: img };
       this.ballMap.set(num, bd);
@@ -356,18 +341,39 @@ export class BallRenderer {
   }
 
   /**
-   * Call this in GameScene update() to keep ground shadows attached under balls
+   * Called every frame in GameScene update().
+   * Updates ground shadows and syncs visual 3D texture rolling with ball velocity!
    */
   updateShadows(): void {
     this.ballMap.forEach((bd, num) => {
       const shadow = this.shadowMap.get(num);
-      if (shadow) {
-        if (bd.sprite.visible && bd.sprite.x > -50) {
+      const sprite = bd.sprite;
+
+      if (sprite.visible && sprite.x > -50) {
+        // Update Ground Shadow Position
+        if (shadow) {
           shadow.setVisible(true);
-          shadow.setPosition(bd.sprite.x + 2.5, bd.sprite.y + 3.5);
-        } else {
-          shadow.setVisible(false);
+          shadow.setPosition(sprite.x + 2.5, sprite.y + 3.5);
         }
+
+        // ─── AUTHENTIC 3D ROLLING ROTATION SYNC ───
+        const body = sprite.body as MatterJS.Body;
+        if (body && body.velocity) {
+          const vx = body.velocity.x;
+          const vy = body.velocity.y;
+          const speed = Math.hypot(vx, vy);
+
+          if (speed > 0.08) {
+            // Roll direction sign relative to horizontal motion
+            const rollDirection = vx >= 0 ? 1 : -1;
+            // Angular velocity proportional to linear speed (v / R)
+            const rollSpeed = (speed / BALL_RADIUS) * 0.22;
+
+            sprite.rotation += rollSpeed * rollDirection;
+          }
+        }
+      } else if (shadow) {
+        shadow.setVisible(false);
       }
     });
   }
