@@ -1,8 +1,8 @@
 /**
  * Modern Mobile HUD for 8-Ball Game
- * Features clean top header (Avatars, Names, Group Badges),
- * 2x font sizes, auto-fading toast notifications,
- * and 🚫 prohibition warnings for illegal target balls.
+ * Features transparent top header, 2x font sizes,
+ * visual mini ball type badges (Solids & Stripes icons),
+ * auto-fading toast notifications, and 🚫 prohibition warnings for illegal target balls.
  */
 import Phaser from "phaser";
 import { PowerControl } from "./PowerControl";
@@ -48,8 +48,8 @@ export class HUD {
 
   private p1NameText!: Phaser.GameObjects.Text;
   private p2NameText!: Phaser.GameObjects.Text;
-  private p1GroupLabel!: Phaser.GameObjects.Text;
-  private p2GroupLabel!: Phaser.GameObjects.Text;
+  private p1GroupBadge!: Phaser.GameObjects.Graphics;
+  private p2GroupBadge!: Phaser.GameObjects.Graphics;
 
   // Avatars
   private p1AvatarImg?: Phaser.GameObjects.Image;
@@ -93,17 +93,12 @@ export class HUD {
       stroke: "#000000",
       strokeThickness: 5,
     });
-    this.p1GroupLabel = this.scene.add.text(80, 48, "", {
-      font: "bold 26px Tahoma, Arial, sans-serif",
-      color: "#cbd5e1",
-      stroke: "#000000",
-      strokeThickness: 4,
-    });
+    this.p1GroupBadge = this.scene.add.graphics();
 
     this.headerContainer.add([
       this.p1CardBg,
       this.p1NameText,
-      this.p1GroupLabel,
+      this.p1GroupBadge,
     ]);
 
     // 2. Player 2 Scorecard (Right)
@@ -116,19 +111,12 @@ export class HUD {
         strokeThickness: 5,
       })
       .setOrigin(1, 0);
-    this.p2GroupLabel = this.scene.add
-      .text(screenW - 80, 48, "", {
-        font: "bold 26px Tahoma, Arial, sans-serif",
-        color: "#cbd5e1",
-        stroke: "#000000",
-        strokeThickness: 4,
-      })
-      .setOrigin(1, 0);
+    this.p2GroupBadge = this.scene.add.graphics();
 
     this.headerContainer.add([
       this.p2CardBg,
       this.p2NameText,
-      this.p2GroupLabel,
+      this.p2GroupBadge,
     ]);
 
     // Foul Banner Text
@@ -311,7 +299,7 @@ export class HUD {
           g.lineStyle(1.5, 0xffffff, 0.7);
           g.lineBetween(hit.ghostX, hit.ghostY, cbEndX, cbEndY);
         } else if (hit.type === "cushion") {
-          const bounceLen = 100;
+          const bounceLen = 80;
           const bounceEndX = hit.ghostX + (hit.reflectionDirX || 0) * bounceLen;
           const bounceEndY = hit.ghostY + (hit.reflectionDirY || 0) * bounceLen;
 
@@ -406,8 +394,8 @@ export class HUD {
     let wallDist = Infinity;
     let wallGhostX = 0;
     let wallGhostY = 0;
-    let reflDx = dx;
-    let reflDy = dy;
+    let reflDx = 0;
+    let reflDy = 0;
 
     if (dx > 0) {
       const t = (maxX - cueX) / dx;
@@ -454,7 +442,7 @@ export class HUD {
         if (xAtY >= minX && xAtY <= maxX && t < wallDist) {
           wallDist = t;
           wallGhostX = xAtY;
-          wallGhostY = maxY;
+          wallGhostY = minY;
           reflDx = dx;
           reflDy = -dy;
         }
@@ -485,16 +473,15 @@ export class HUD {
     this.cueStick.setAlpha(alpha);
 
     const length = 320;
-    const offsetBack = BALL_RADIUS + 6 + power * 4;
+    const offsetBack = BALL_RADIUS + 8 + power * 4;
 
-    const backAngle = angleRad + Math.PI;
-    const dirX = Math.cos(backAngle);
-    const dirY = Math.sin(backAngle);
+    const dx = Math.cos(angleRad);
+    const dy = Math.sin(angleRad);
 
-    const startX = cx + dirX * offsetBack;
-    const startY = cy + dirY * offsetBack;
-    const endX = startX + dirX * length;
-    const endY = startY + dirY * length;
+    const startX = cx - dx * offsetBack;
+    const startY = cy - dy * offsetBack;
+    const endX = startX - dx * length;
+    const endY = startY - dy * length;
 
     this.cueStick.lineStyle(6, 0x000000, 0.35);
     this.cueStick.lineBetween(startX + 2, startY + 2, endX + 2, endY + 2);
@@ -502,8 +489,8 @@ export class HUD {
     this.cueStick.lineStyle(5, 0xc084fc, 1);
     this.cueStick.lineBetween(startX, startY, endX, endY);
 
-    const tipX = startX + dirX * 10;
-    const tipY = startY + dirY * 10;
+    const tipX = startX - dx * 10;
+    const tipY = startY - dy * 10;
     this.cueStick.lineStyle(5, 0xffffff, 1);
     this.cueStick.lineBetween(startX, startY, tipX, tipY);
   }
@@ -561,6 +548,58 @@ export class HUD {
     const offset = radius * 0.707;
     g.lineStyle(3, 0xef4444, 1);
     g.lineBetween(x - offset, y - offset, x + offset, y + offset);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  BALL TYPE MINI BADGES (Solids / Stripes Icons)
+  // ═══════════════════════════════════════════════════════════
+
+  private drawGroupBadge(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    group: "solids" | "stripes",
+  ): void {
+    g.clear();
+    const r = 14; // Badge Radius
+
+    if (group === "solids") {
+      // Mini Solid Ball Icon (Solid Yellow Ball #1)
+      g.fillStyle(0xf1c40f, 1);
+      g.fillCircle(x, y, r);
+
+      // White Center Patch
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, 6);
+
+      // Top Specular Highlight
+      g.fillStyle(0xffffff, 0.4);
+      g.fillCircle(x - 4, y - 4, 3);
+
+      // Crisp Outline
+      g.lineStyle(2, 0x000000, 0.6);
+      g.strokeCircle(x, y, r);
+    } else {
+      // Mini Stripe Ball Icon (White ball with Blue Stripe Band)
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, r);
+
+      // Center Stripe Band
+      g.fillStyle(0x2980b9, 1);
+      g.fillRect(x - 13, y - 6, 26, 12);
+
+      // Stroke outer circle boundary
+      g.lineStyle(2, 0x000000, 0.6);
+      g.strokeCircle(x, y, r);
+
+      // White Center Patch
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(x, y, 5);
+
+      // Top Specular Highlight
+      g.fillStyle(0xffffff, 0.4);
+      g.fillCircle(x - 4, y - 4, 3);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -629,7 +668,7 @@ export class HUD {
   }
 
   public setTurnText(msg: string, color: string = "#f97316"): void {
-    // No-op (turn badge removed from top)
+    // No-op
   }
 
   public updateTurnUI(myNum: number, isMyTurn: boolean): void {
@@ -650,14 +689,26 @@ export class HUD {
     remP1: number,
     remP2: number,
   ): void {
+    const { width: screenW } = this.scene.scale;
+
     if (!p1Group) {
-      this.p1GroupLabel.setText("");
-      this.p2GroupLabel.setText("");
+      this.p1GroupBadge.clear();
+      this.p2GroupBadge.clear();
       return;
     }
 
-    this.p1GroupLabel.setText(p1Group === "solids" ? "تک‌رنگ" : "دو‌رنگ");
-    this.p2GroupLabel.setText(p2Group === "solids" ? "تک‌رنگ" : "دو‌رنگ");
+    const grp1 =
+      p1Group === "solids" || p1Group === 1 || p1Group === "1"
+        ? "solids"
+        : "stripes";
+    const grp2 =
+      p2Group === "solids" || p2Group === 1 || p2Group === "1"
+        ? "solids"
+        : "stripes";
+
+    // Draw Mini Ball Badges under Player Names
+    this.drawGroupBadge(this.p1GroupBadge, 96, 52, grp1);
+    this.drawGroupBadge(this.p2GroupBadge, screenW - 96, 52, grp2);
   }
 
   public showGameOverOverlay(won: boolean): void {

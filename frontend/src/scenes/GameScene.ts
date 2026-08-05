@@ -44,9 +44,9 @@ export class GameScene extends Phaser.Scene {
   // Simulation settle state
   private isSimulating = false;
   private settleFrameCount = 0;
-  private readonly SETTLE_SPEED = 2.0;
-  private readonly SETTLE_FRAMES = 10;
-  private readonly SIM_TIMEOUT = 8000;
+  private readonly SETTLE_SPEED = 0.2;
+  private readonly SETTLE_FRAMES = 5;
+  private readonly SIM_TIMEOUT = 6000;
   private isLocalShot = true;
   private simStartTime = 0;
   private pocketedBalls: number[] = [];
@@ -95,7 +95,6 @@ export class GameScene extends Phaser.Scene {
     this.player1Group = null;
     this.player2Group = null;
 
-    // Robust player number resolution
     if (gd.player_number) {
       this.myPlayerNum = gd.player_number;
     } else if (gd.player2_id && gameCfg.playerId === gd.player2_id) {
@@ -239,8 +238,8 @@ export class GameScene extends Phaser.Scene {
       this.player2Group,
       this.pocketedByPlayer1,
       this.pocketedByPlayer2,
-      this.ballRenderer.countByGroup(this.player1Group),
-      this.ballRenderer.countByGroup(this.player2Group),
+      this.countOwnRemaining(),
+      this.countOwnRemaining(),
     );
   }
 
@@ -251,8 +250,8 @@ export class GameScene extends Phaser.Scene {
       this.player2Group,
       this.pocketedByPlayer1,
       this.pocketedByPlayer2,
-      this.ballRenderer.countByGroup(this.player1Group),
-      this.ballRenderer.countByGroup(this.player2Group),
+      this.countOwnRemaining(),
+      this.countOwnRemaining(),
     );
   }
 
@@ -279,6 +278,7 @@ export class GameScene extends Phaser.Scene {
 
     return count;
   }
+
   private assignGroupsLocally(): void {
     if (this.player1Group !== null || this.player2Group !== null) return;
     if (this.pocketedBalls.length === 0) return;
@@ -372,7 +372,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Pass group assignment & remaining balls count
     const myGroup =
       this.myPlayerNum === 1 ? this.player1Group : this.player2Group;
     const ownRemaining = this.countOwnRemaining();
@@ -387,31 +386,28 @@ export class GameScene extends Phaser.Scene {
       ownRemaining,
     );
   }
+
   // ═══════════════════════════════════════════════════════════
   //  SHOT EXECUTION
   // ═══════════════════════════════════════════════════════════
   private executeShot(): void {
     if (this.isSimulating || !this.isMyTurn || this.aimPower <= 0) return;
 
-    // LOCK TURN IMMEDIATELY
     this.isMyTurn = false;
     this.isSimulating = true;
     this.isLocalShot = true;
     this.isAiming = false;
     this.settleFrameCount = 0;
 
-    // Hide trajectory & disable power control
     this.hud.hideAim();
     this.hud.setPowerEnabled(false);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
-    // Reset shot tracking
     this.pocketedBalls = [];
     this.cuePocketed = false;
     this.firstContact = null;
     this.simStartTime = Date.now();
 
-    // Apply velocity to cue ball directly on the Matter body
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
     const matterBody = (cue as any).body;
@@ -424,7 +420,6 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Tell opponent about shot
     wsClient.send({
       type: "shot_init",
       angle_deg: (this.aimAngle * 180) / Math.PI,
@@ -447,7 +442,6 @@ export class GameScene extends Phaser.Scene {
       this.hud.cueStick.setAlpha(0);
     }
 
-    // Teleport escaped balls back
     const MBody = (Phaser.Physics.Matter as any).Matter.Body;
     this.ballRenderer.getAllBalls().forEach((bd) => {
       if (!bd.sprite.visible) return;
@@ -471,18 +465,24 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.isSimulating) return;
 
+    // Clamp near-zero velocities so cushion micro-jitter stops instantly
+    let allSettled = true;
+    this.ballRenderer.getAllBalls().forEach((bd) => {
+      const rawBody = bd.sprite.body as any as MatterJS.Body;
+      if (rawBody && bd.sprite.visible) {
+        if (rawBody.speed < 0.18) {
+          MBody.setVelocity(rawBody, { x: 0, y: 0 });
+          MBody.setAngularVelocity(rawBody, 0);
+        } else {
+          allSettled = false;
+        }
+      }
+    });
+
     if (Date.now() - this.simStartTime > this.SIM_TIMEOUT) {
       this.processShotResult();
       return;
     }
-
-    let allSettled = true;
-    this.ballRenderer.getAllBalls().forEach((bd) => {
-      const matterBody = (bd.sprite.body as any).body;
-      if (!matterBody || (matterBody.speed ?? Infinity) > this.SETTLE_SPEED) {
-        allSettled = false;
-      }
-    });
 
     if (allSettled) {
       this.settleFrameCount++;
@@ -630,7 +630,6 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.resetPower();
 
-    // Authoritative turn state from server
     const nextPlayer = data.current_player;
     this.isMyTurn = nextPlayer === this.myPlayerNum;
 
