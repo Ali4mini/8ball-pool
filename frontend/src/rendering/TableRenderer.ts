@@ -191,8 +191,14 @@ export class TableRenderer {
           PLAY_H / 2,
           PLAY_W * 0.6,
         );
-        gradient.addColorStop(0, `rgb(${(cColor as any).r}, ${(cColor as any).g}, ${(cColor as any).b})`);
-        gradient.addColorStop(1, `rgb(${(eColor as any).r}, ${(eColor as any).g}, ${(eColor as any).b})`);
+        gradient.addColorStop(
+          0,
+          `rgb(${(cColor as any).r}, ${(cColor as any).g}, ${(cColor as any).b})`,
+        );
+        gradient.addColorStop(
+          1,
+          `rgb(${(eColor as any).r}, ${(eColor as any).g}, ${(eColor as any).b})`,
+        );
 
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, PLAY_W, PLAY_H);
@@ -349,57 +355,57 @@ export class TableRenderer {
 
   private static createWallBodies(scene: Phaser.Scene): MatterJS.Body[] {
     const walls: MatterJS.Body[] = [];
-    const WT = CUSHION_W;
-    const wall = (cx: number, cy: number, w: number, h: number) => {
-      const b = scene.matter.add.rectangle(cx, cy, w, h, {
+
+    // Make physics wall bodies 200px thick extending OUTWARDS from the cushion edge.
+    // Inner edge remains perfectly aligned with PLAY_T, PLAY_B, PLAY_L, PLAY_R.
+    const THICK = 200;
+
+    const addWall = (x: number, y: number, w: number, h: number) => {
+      const b = scene.matter.add.rectangle(x, y, w, h, {
         isStatic: true,
-        restitution: 0.7,
-        friction: 0.08,
+        restitution: 0.85,
+        friction: 0.05,
         label: "wall",
       });
       walls.push(b);
     };
 
-    wall(
-      (PLAY_L + POCKET_R_INSET + PLAY_L + PLAY_W / 2 - POCKET_R_INSET) / 2,
-      PLAY_T - WT / 2,
-      PLAY_L + PLAY_W / 2 - POCKET_R_INSET - (PLAY_L + POCKET_R_INSET),
-      WT,
-    );
-    wall(
-      (PLAY_L + PLAY_W / 2 + POCKET_R_INSET + PLAY_R - POCKET_R_INSET) / 2,
-      PLAY_T - WT / 2,
-      PLAY_R - POCKET_R_INSET - (PLAY_L + PLAY_W / 2 + POCKET_R_INSET),
-      WT,
-    );
-    wall(
-      (PLAY_L + POCKET_R_INSET + PLAY_L + PLAY_W / 2 - POCKET_R_INSET) / 2,
-      PLAY_B + WT / 2,
-      PLAY_L + PLAY_W / 2 - POCKET_R_INSET - (PLAY_L + POCKET_R_INSET),
-      WT,
-    );
-    wall(
-      (PLAY_L + PLAY_W / 2 + POCKET_R_INSET + PLAY_R - POCKET_R_INSET) / 2,
-      PLAY_B + WT / 2,
-      PLAY_R - POCKET_R_INSET - (PLAY_L + PLAY_W / 2 + POCKET_R_INSET),
-      WT,
-    );
-    wall(
-      PLAY_L - WT / 2,
-      (PLAY_T + POCKET_R_INSET + PLAY_B - POCKET_R_INSET) / 2,
-      WT,
-      PLAY_B - POCKET_R_INSET - (PLAY_T + POCKET_R_INSET),
-    );
-    wall(
-      PLAY_R + WT / 2,
-      (PLAY_T + POCKET_R_INSET + PLAY_B - POCKET_R_INSET) / 2,
-      WT,
-      PLAY_B - POCKET_R_INSET - (PLAY_T + POCKET_R_INSET),
-    );
+    const topW1_Len =
+      PLAY_L + PLAY_W / 2 - POCKET_R_INSET - (PLAY_L + POCKET_R_INSET);
+    const topW1_CenterX =
+      (PLAY_L + POCKET_R_INSET + PLAY_L + PLAY_W / 2 - POCKET_R_INSET) / 2;
+
+    const topW2_Len =
+      PLAY_R - POCKET_R_INSET - (PLAY_L + PLAY_W / 2 + POCKET_R_INSET);
+    const topW2_CenterX =
+      (PLAY_L + PLAY_W / 2 + POCKET_R_INSET + PLAY_R - POCKET_R_INSET) / 2;
+
+    const sideW_Len = PLAY_B - POCKET_R_INSET - (PLAY_T + POCKET_R_INSET);
+    const sideW_CenterY =
+      (PLAY_T + POCKET_R_INSET + PLAY_B - POCKET_R_INSET) / 2;
+
+    // Top Cushions (thick body extends upwards from PLAY_T)
+    addWall(topW1_CenterX, PLAY_T - THICK / 2, topW1_Len, THICK);
+    addWall(topW2_CenterX, PLAY_T - THICK / 2, topW2_Len, THICK);
+
+    // Bottom Cushions (thick body extends downwards from PLAY_B)
+    addWall(topW1_CenterX, PLAY_B + THICK / 2, topW1_Len, THICK);
+    addWall(topW2_CenterX, PLAY_B + THICK / 2, topW2_Len, THICK);
+
+    // Left Cushion (thick body extends leftwards from PLAY_L)
+    addWall(PLAY_L - THICK / 2, sideW_CenterY, THICK, sideW_Len);
+
+    // Right Cushion (thick body extends rightwards from PLAY_R)
+    addWall(PLAY_R + THICK / 2, sideW_CenterY, THICK, sideW_Len);
+
+    // Outer safety boundary ring around the entire table frame
+    addWall(TABLE_X + TABLE_W / 2, TABLE_Y - 150, TABLE_W + 600, 200); // Far Top
+    addWall(TABLE_X + TABLE_W / 2, TABLE_Y + TABLE_H + 150, TABLE_W + 600, 200); // Far Bottom
+    addWall(TABLE_X - 150, TABLE_Y + TABLE_H / 2, 200, TABLE_H + 600); // Far Left
+    addWall(TABLE_X + TABLE_W + 150, TABLE_Y + TABLE_H / 2, 200, TABLE_H + 600); // Far Right
 
     return walls;
   }
-
   private static createPocketSensors(scene: Phaser.Scene): MatterJS.Body[] {
     return TableRenderer.getPocketPositions().map((p) =>
       scene.matter.add.circle(p.x, p.y, POCKET_R - 2, {

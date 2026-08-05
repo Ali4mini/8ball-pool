@@ -1,6 +1,6 @@
-import Phaser from 'phaser';
-import { wsClient } from '../network/wsClient';
-import { LANG } from '../lang';
+import Phaser from "phaser";
+import { wsClient } from "../network/wsClient";
+import { LANG } from "../lang";
 
 export class WaitingScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
@@ -10,7 +10,7 @@ export class WaitingScene extends Phaser.Scene {
   private angle = 0;
 
   constructor() {
-    super({ key: 'WaitingScene' });
+    super({ key: "WaitingScene" });
   }
 
   create(): void {
@@ -30,34 +30,42 @@ export class WaitingScene extends Phaser.Scene {
     vigB.fillRect(0, height - 80, width, 80);
 
     // Title — large billiard emoji
-    this.add.text(width / 2, height * 0.18, '🎱', {
-      fontSize: '80px',
-    }).setOrigin(0.5);
+    this.add
+      .text(width / 2, height * 0.18, "🎱", {
+        fontSize: "80px",
+      })
+      .setOrigin(0.5);
 
     // Waiting text
-    this.add.text(width / 2, height * 0.30, LANG.waitingTitle, {
-      fontSize: '28px',
-      fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      fontStyle: 'bold',
-      color: '#ffffff',
-    }).setOrigin(0.5);
+    this.add
+      .text(width / 2, height * 0.3, LANG.waitingTitle, {
+        fontSize: "28px",
+        fontFamily: "IRANSans, Vazir, Tahoma, Arial, sans-serif",
+        fontStyle: "bold",
+        color: "#ffffff",
+      })
+      .setOrigin(0.5);
 
-    this.add.text(width / 2, height * 0.38, LANG.waitingForOpponent, {
-      fontSize: '16px',
-      fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      color: '#999999',
-    }).setOrigin(0.5);
+    this.add
+      .text(width / 2, height * 0.38, LANG.waitingForOpponent, {
+        fontSize: "16px",
+        fontFamily: "IRANSans, Vazir, Tahoma, Arial, sans-serif",
+        color: "#999999",
+      })
+      .setOrigin(0.5);
 
     // Animated pulsing circle
     this.animatedCircle = this.add.graphics();
     this.drawPulsingCircle(width / 2, height * 0.52);
 
     // Status text (dots)
-    this.statusText = this.add.text(width / 2, height * 0.52, '', {
-      fontSize: '28px',
-      fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      color: '#f97316',
-    }).setOrigin(0.5);
+    this.statusText = this.add
+      .text(width / 2, height * 0.52, "", {
+        fontSize: "28px",
+        fontFamily: "IRANSans, Vazir, Tahoma, Arial, sans-serif",
+        color: "#f97316",
+      })
+      .setOrigin(0.5);
 
     let dots = 0;
     this.time.addEvent({
@@ -65,62 +73,83 @@ export class WaitingScene extends Phaser.Scene {
       loop: true,
       callback: () => {
         dots = (dots + 1) % 4;
-        this.statusText.setText('.'.repeat(dots));
+        this.statusText.setText(".".repeat(dots));
       },
     });
 
     // Opponent info area (hidden until they join)
-    this.opponentText = this.add.text(width / 2, height * 0.62, '', {
-      fontSize: '16px',
-      fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      color: '#44ff44',
-    }).setOrigin(0.5).setAlpha(0);
+    this.opponentText = this.add
+      .text(width / 2, height * 0.62, "", {
+        fontSize: "16px",
+        fontFamily: "IRANSans, Vazir, Tahoma, Arial, sans-serif",
+        color: "#44ff44",
+      })
+      .setOrigin(0.5)
+      .setAlpha(0);
 
     // Cancel button
-    const cancelBtn = this.add.text(width / 2, height * 0.82, LANG.cancel, {
-      fontSize: '16px',
-      fontFamily: 'IRANSans, Vazir, Tahoma, Arial, sans-serif',
-      color: '#ff6666',
-      backgroundColor: '#331111',
-      padding: { x: 28, y: 10 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const cancelBtn = this.add
+      .text(width / 2, height * 0.82, LANG.cancel, {
+        fontSize: "16px",
+        fontFamily: "IRANSans, Vazir, Tahoma, Arial, sans-serif",
+        color: "#ff6666",
+        backgroundColor: "#331111",
+        padding: { x: 28, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
 
-    cancelBtn.on('pointerover', () => cancelBtn.setColor('#ff4444'));
-    cancelBtn.on('pointerout', () => cancelBtn.setColor('#ff6666'));
-    cancelBtn.on('pointerdown', () => {
+    cancelBtn.on("pointerover", () => cancelBtn.setColor("#ff4444"));
+    cancelBtn.on("pointerout", () => cancelBtn.setColor("#ff6666"));
+    cancelBtn.on("pointerdown", () => {
       wsClient.disconnect();
       window.history.back();
     });
 
-    // Listen for game_start event
-    wsClient.on('game_start', (data: any) => {
-      this.scene.start('GameScene', { gameData: data });
-    });
+    // ─── WEBSOCKET LISTENERS ───
 
-    wsClient.on('opponent_joined', (data: any) => {
+    // Handle normal game start
+    const onGameStart = (data: any) => {
+      this.scene.start("GameScene", { gameData: data });
+    };
+
+    // Handle reconnected player (tab refresh / connection drop)
+    const onReconnected = (data: any) => {
+      console.log(
+        "[WaitingScene] Reconnected to active game! Launching GameScene...",
+        data,
+      );
+      this.scene.start("GameScene", { gameData: data });
+    };
+
+    const onOpponentJoined = (data: any) => {
       this.opponentText.setText(LANG.opponentFound(data.opponent_name));
       this.opponentText.setAlpha(1);
-      // Pulse the text
       this.tweens.add({
         targets: this.opponentText,
         scaleX: { from: 1.2, to: 1 },
         scaleY: { from: 1.2, to: 1 },
         duration: 500,
-        ease: 'Back.easeOut',
+        ease: "Back.easeOut",
       });
-    });
+    };
 
-    wsClient.on('room_joined', (data: any) => {
-      // no-op
-    });
+    const onError = (data: any) => {
+      this.statusText.setText(data.message || "خطا رخ داد");
+      this.statusText.setColor("#ff4444");
+    };
 
-    wsClient.on('waiting_for_opponent', () => {
-      // no-op
-    });
+    wsClient.on("game_start", onGameStart);
+    wsClient.on("reconnected", onReconnected);
+    wsClient.on("opponent_joined", onOpponentJoined);
+    wsClient.on("error", onError);
 
-    wsClient.on('error', (data: any) => {
-      this.statusText.setText(data.message || 'خطا رخ داد');
-      this.statusText.setColor('#ff4444');
+    // Clean up handlers when scene shuts down
+    this.events.once("shutdown", () => {
+      wsClient.off("game_start", onGameStart);
+      wsClient.off("reconnected", onReconnected);
+      wsClient.off("opponent_joined", onOpponentJoined);
+      wsClient.off("error", onError);
     });
   }
 

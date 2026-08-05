@@ -1,5 +1,6 @@
 /**
- * Parse URL parameters passed by the Porteghal app WebView.
+ * Parse URL parameters passed by the Porteghal app WebView,
+ * with sessionStorage persistence for tab refreshes and reconnects.
  */
 export interface GameConfig {
   playerId: string;
@@ -17,22 +18,53 @@ export interface GameConfig {
 
 export function getConfig(): GameConfig {
   const params = new URLSearchParams(window.location.search);
-  
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsHost = params.get('wsUrl') || `${window.location.host}`;
-  const roomId = params.get('roomId') || `room_${Math.random().toString(36).slice(2, 10)}`;
-  
+
+  // 1. Resolve Room ID (URL param -> sessionStorage -> random fallback)
+  let roomId = params.get("roomId");
+  if (!roomId) {
+    roomId = sessionStorage.getItem("8ball_active_roomId");
+    if (!roomId) {
+      roomId = `room_${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem("8ball_active_roomId", roomId);
+    }
+  } else {
+    sessionStorage.setItem("8ball_active_roomId", roomId);
+  }
+
+  // 2. Resolve Player ID (URL param -> sessionStorage -> random fallback)
+  let playerId = params.get("playerId");
+  if (!playerId) {
+    playerId = sessionStorage.getItem("8ball_active_playerId");
+    if (!playerId) {
+      playerId = `guest_${Math.random().toString(36).slice(2, 8)}`;
+      sessionStorage.setItem("8ball_active_playerId", playerId);
+    }
+  } else {
+    sessionStorage.setItem("8ball_active_playerId", playerId);
+  }
+
+  // 3. Resolve Player Name
+  let playerName = params.get("playerName");
+  if (!playerName) {
+    playerName = sessionStorage.getItem("8ball_active_playerName") || "Player";
+  } else {
+    sessionStorage.setItem("8ball_active_playerName", playerName);
+  }
+
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsHost = params.get("wsUrl") || `${window.location.host}`;
+
   return {
-    playerId: params.get('playerId') || `guest_${Math.random().toString(36).slice(2, 8)}`,
-    playerName: params.get('playerName') || 'Player',
-    opponentId: params.get('opponentId') || '',
-    opponentName: params.get('opponentName') || '',
-    apiBaseUrl: params.get('apiBaseUrl') || '',
+    playerId,
+    playerName,
+    opponentId: params.get("opponentId") || "",
+    opponentName: params.get("opponentName") || "",
+    apiBaseUrl: params.get("apiBaseUrl") || "",
     wsUrl: `${wsProtocol}//${wsHost}/ws/game/${roomId}`,
-    betAmount: parseInt(params.get('betAmount') || '0', 10),
-    tableSkin: params.get('tableSkin') || 'classic',
-    ballSet: params.get('ballSet') || 'classic',
-    cueSkin: params.get('cueSkin') || 'standard',
+    betAmount: parseInt(params.get("betAmount") || "0", 10),
+    tableSkin: params.get("tableSkin") || "classic",
+    ballSet: params.get("ballSet") || "classic",
+    cueSkin: params.get("cueSkin") || "standard",
     roomId,
   };
 }

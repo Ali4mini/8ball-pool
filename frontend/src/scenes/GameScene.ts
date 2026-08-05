@@ -80,11 +80,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data: { gameData: any }): void {
-    const gd = data.gameData;
-    this.player1Id = gd.player1_id;
-    this.player1Name = gd.player1_name;
-    this.player2Id = gd.player2_id;
-    this.player2Name = gd.player2_name;
+    const gd = data.gameData || {};
+    this.player1Id = gd.player1_id || "";
+    this.player1Name = gd.player1_name || "";
+    this.player2Id = gd.player2_id || "";
+    this.player2Name = gd.player2_name || "";
     this.pocketedBalls = [];
     this.cuePocketed = false;
     this.firstContact = null;
@@ -95,8 +95,15 @@ export class GameScene extends Phaser.Scene {
     this.player1Group = null;
     this.player2Group = null;
 
-    const isP1 = gameCfg.playerId === this.player1Id;
-    this.myPlayerNum = isP1 ? 1 : 2;
+    // Robust player number resolution
+    if (gd.player_number) {
+      this.myPlayerNum = gd.player_number;
+    } else if (gd.player2_id && gameCfg.playerId === gd.player2_id) {
+      this.myPlayerNum = 2;
+    } else {
+      this.myPlayerNum = 1;
+    }
+
     const breakPlayer = gd.break_player || 1;
     this.isMyTurn = this.myPlayerNum === breakPlayer;
   }
@@ -252,9 +259,26 @@ export class GameScene extends Phaser.Scene {
   private countOwnRemaining(): number {
     const ownGroup =
       this.myPlayerNum === 1 ? this.player1Group : this.player2Group;
-    return this.ballRenderer.countByGroup(ownGroup);
-  }
+    if (!ownGroup) return 7;
 
+    const isSolids =
+      ownGroup === "solids" || ownGroup === 1 || (ownGroup as any) === "1";
+    const isStripes =
+      ownGroup === "stripes" || ownGroup === 2 || (ownGroup as any) === "2";
+
+    let count = 0;
+    this.ballRenderer.getAllBalls().forEach((bd) => {
+      if (bd.sprite.visible && bd.sprite.x > 0) {
+        if (isSolids && bd.number >= 1 && bd.number <= 7) {
+          count++;
+        } else if (isStripes && bd.number >= 9 && bd.number <= 15) {
+          count++;
+        }
+      }
+    });
+
+    return count;
+  }
   private assignGroupsLocally(): void {
     if (this.player1Group !== null || this.player2Group !== null) return;
     if (this.pocketedBalls.length === 0) return;
@@ -293,12 +317,9 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════
   //  INPUT — Aiming via table pointer, Power via slider
   // ═══════════════════════════════════════════════════════════
-  // In frontend/src/scenes/GameScene.ts
-
   private setupInput(): void {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (!this.isMyTurn || this.isSimulating) return;
-      // Do not aim if interacting with power control or dragging power
       if (
         this.hud.isDraggingPower() ||
         this.hud.isPointerOverPowerUI(pointer.x, pointer.y)
@@ -311,7 +332,6 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       if (!this.isMyTurn || this.isSimulating) return;
-      // Freeze aim angle if user is adjusting power or over power box
       if (
         this.hud.isDraggingPower() ||
         this.hud.isPointerOverPowerUI(pointer.x, pointer.y)
@@ -331,20 +351,16 @@ export class GameScene extends Phaser.Scene {
   private updateAimAngle(pointer: Phaser.Input.Pointer): void {
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
-
     const cx = cue.x;
     const cy = cue.y;
-
-    // Calculate angle from cue ball towards pointer
     const dx = pointer.worldX - cx;
     const dy = pointer.worldY - cy;
-
-    // Ignore touches extremely close to cue ball center to prevent rapid jittering under finger
     if (Math.hypot(dx, dy) < 15) return;
 
     this.aimAngle = Math.atan2(dy, dx);
     this.updateAimDisplay();
   }
+
   private updateAimDisplay(): void {
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -356,23 +372,38 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.hud.drawAim(cue.x, cue.y, this.aimAngle, this.aimPower, ballsList);
-  }
+    // Pass group assignment & remaining balls count
+    const myGroup =
+      this.myPlayerNum === 1 ? this.player1Group : this.player2Group;
+    const ownRemaining = this.countOwnRemaining();
 
+    this.hud.drawAim(
+      cue.x,
+      cue.y,
+      this.aimAngle,
+      this.aimPower,
+      ballsList,
+      myGroup,
+      ownRemaining,
+    );
+  }
   // ═══════════════════════════════════════════════════════════
   //  SHOT EXECUTION
   // ═══════════════════════════════════════════════════════════
   private executeShot(): void {
     if (this.isSimulating || !this.isMyTurn || this.aimPower <= 0) return;
 
+    // LOCK TURN IMMEDIATELY
+    this.isMyTurn = false;
     this.isSimulating = true;
     this.isLocalShot = true;
     this.isAiming = false;
     this.settleFrameCount = 0;
 
-    // Hide trajectory & cue stick during shot
+    // Hide trajectory & disable power control
     this.hud.hideAim();
     this.hud.setPowerEnabled(false);
+    this.hud.updateTurnUI(this.myPlayerNum, false);
 
     // Reset shot tracking
     this.pocketedBalls = [];
@@ -402,7 +433,6 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.hud.setInfo(LANG.simulating);
-    this.updateTurnUI();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -549,6 +579,12 @@ export class GameScene extends Phaser.Scene {
     const ballPositions = data.ball_positions || null;
     const ballInHand = data.ball_in_hand || false;
 
+    if (data.player1_group && data.player2_group) {
+      this.player1Group = data.player1_group;
+      this.player2Group = data.player2_group;
+      this.updateGroupDisplay();
+    }
+
     if (ballPositions) {
       this.ballRenderer.setPositions(ballPositions);
     }
@@ -594,27 +630,26 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.resetPower();
 
-    if (ballInHand && this.isMyTurn) {
-      this.hud.setInfo(LANG.ballInHand);
-    } else {
-      const nextPlayer = data.current_player;
-      this.isMyTurn = nextPlayer === this.myPlayerNum;
+    // Authoritative turn state from server
+    const nextPlayer = data.current_player;
+    this.isMyTurn = nextPlayer === this.myPlayerNum;
 
-      if (this.isMyTurn) {
-        this.hud.setTurnText(LANG.yourTurn, "#f97316");
-        this.hud.setInfo(LANG.aimAndShoot);
-      } else {
-        this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
-        this.hud.setInfo(LANG.waitingOpponent);
-      }
-      this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
+    if (this.isMyTurn) {
+      this.hud.setTurnText(LANG.yourTurn, "#f97316");
+      this.hud.setInfo(ballInHand ? LANG.ballInHand : LANG.aimAndShoot);
+    } else {
+      this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
+      this.hud.setInfo(LANG.waitingOpponent);
     }
+    this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
   }
 
   // ═══════════════════════════════════════════════════════════
   //  WEBSOCKET HANDLERS
   // ═══════════════════════════════════════════════════════════
   private setupWebSocket(): void {
+    wsClient.removeAllListeners();
+
     wsClient.on("game_start", (data: any) => {
       this.player1Id = data.player1_id;
       this.player1Name = data.player1_name;
@@ -634,16 +669,25 @@ export class GameScene extends Phaser.Scene {
     });
 
     wsClient.on("your_turn", (data: any) => {
-      if (data.player_id === gameCfg.playerId) {
+      const isMe =
+        data.player === this.myPlayerNum || data.player_id === gameCfg.playerId;
+      if (isMe) {
         this.isMyTurn = true;
         this.hud.setTurnText(LANG.yourTurn, "#f97316");
         this.hud.setInfo(LANG.aimAndShoot);
         this.hud.updateTurnUI(this.myPlayerNum, true);
+      } else {
+        this.isMyTurn = false;
+        this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
+        this.hud.setInfo(LANG.waitingOpponent);
+        this.hud.updateTurnUI(this.myPlayerNum, false);
       }
     });
 
     wsClient.on("opponent_turn", (data: any) => {
-      if (data.player_id !== gameCfg.playerId) {
+      const isMe =
+        data.player === this.myPlayerNum || data.player_id === gameCfg.playerId;
+      if (!isMe) {
         this.isMyTurn = false;
         this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
         this.hud.setInfo(LANG.waitingOpponent);
@@ -665,6 +709,47 @@ export class GameScene extends Phaser.Scene {
       this.player2Group =
         data.player2_group === "solids" ? "solids" : "stripes";
       this.updateGroupDisplay();
+    });
+
+    wsClient.on("player_disconnected", (data: any) => {
+      this.hud.setInfo(
+        data.message || "حریف قطع شد. در حال انتظار برای اتصال مجدد...",
+      );
+    });
+
+    wsClient.on("player_reconnected", (data: any) => {
+      this.hud.setInfo(data.message || "حریف دوباره متصل شد");
+    });
+
+    wsClient.on("reconnected", (data: any) => {
+      console.log("[GameScene] Reconnected to server:", data);
+
+      this.player1Id = data.player1_id;
+      this.player1Name = data.player1_name;
+      this.player2Id = data.player2_id;
+      this.player2Name = data.player2_name;
+      this.myPlayerNum = data.player_number;
+      this.isMyTurn = data.is_my_turn;
+
+      this.hud.setNames(
+        this.player1Id,
+        this.player1Name,
+        this.player2Id,
+        this.player2Name,
+      );
+      this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
+
+      if (data.ball_positions) {
+        this.ballRenderer.setPositions(data.ball_positions);
+      }
+
+      if (data.player1_group && data.player2_group) {
+        this.player1Group = data.player1_group;
+        this.player2Group = data.player2_group;
+        this.updateGroupDisplay();
+      }
+
+      this.hud.setInfo("اتصال مجدد موفقیت‌آمیز بود");
     });
 
     wsClient.on("game_over", (data: any) => {

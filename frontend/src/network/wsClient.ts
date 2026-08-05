@@ -1,8 +1,8 @@
 /**
  * WebSocket client for 8-ball game.
- * Handles connection, reconnection, and message dispatch.
+ * Handles connection, reconnection, and safe message dispatching.
  */
-import { config } from '../config';
+import { config } from "../config";
 
 export type MessageHandler = (data: any) => void;
 
@@ -21,13 +21,13 @@ export class WSClient {
         this.ws = new WebSocket(config.wsUrl);
 
         this.ws.onopen = () => {
-          console.log('[WS] Connected');
+          console.log("[WS] Connected");
           this.connected = true;
           this.reconnectAttempts = 0;
 
           // Send join room
           this.send({
-            type: 'join_room',
+            type: "join_room",
             player_id: config.playerId,
             player_name: config.playerName,
             opponent_id: config.opponentId,
@@ -41,21 +41,26 @@ export class WSClient {
             const data = JSON.parse(event.data);
             this.dispatch(data.type, data);
           } catch (e) {
-            console.error('[WS] Failed to parse message:', e);
+            console.error("[WS] Failed to parse message JSON:", e);
           }
         };
 
         this.ws.onclose = () => {
           this.connected = false;
-          if (!this.intentionalClose && this.reconnectAttempts < this.maxReconnectAttempts) {
+          if (
+            !this.intentionalClose &&
+            this.reconnectAttempts < this.maxReconnectAttempts
+          ) {
             this.reconnectAttempts++;
-            console.log(`[WS] Reconnecting (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+            console.log(
+              `[WS] Reconnecting (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`,
+            );
             setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
           }
         };
 
         this.ws.onerror = (err) => {
-          console.error('[WS] Error:', err);
+          console.error("[WS] Error:", err);
           reject(err);
         };
       } catch (e) {
@@ -89,18 +94,41 @@ export class WSClient {
   off(type: string, handler: MessageHandler): void {
     const handlers = this.handlers.get(type);
     if (handlers) {
-      this.handlers.set(type, handlers.filter(h => h !== handler));
+      this.handlers.set(
+        type,
+        handlers.filter((h) => h !== handler),
+      );
+    }
+  }
+
+  removeAllListeners(type?: string): void {
+    if (type) {
+      this.handlers.delete(type);
+    } else {
+      this.handlers.clear();
     }
   }
 
   private dispatch(type: string, data: any): void {
     const handlers = this.handlers.get(type);
-    if (handlers) {
-      handlers.forEach(h => h(data));
+    if (handlers && handlers.length > 0) {
+      // Wrap each handler execution safely so one failing handler does not break others!
+      handlers.forEach((handler) => {
+        try {
+          handler(data);
+        } catch (err) {
+          console.error(
+            `[WS] Error executing handler for message type '${type}':`,
+            err,
+          );
+        }
+      });
     }
   }
 
-  get isConnected(): boolean { return this.connected; }
+  get isConnected(): boolean {
+    return this.connected;
+  }
 }
 
 export const wsClient = new WSClient();
