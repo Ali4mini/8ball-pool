@@ -394,6 +394,16 @@ async def game_websocket(websocket: WebSocket, room_id: str):
 
             if msg_type == "shoot":
                 await process_shot(data)
+            elif msg_type == "aim_update":
+                # Forward live aiming angle/power to opponent
+                state = active_games.get(room_id)
+                if state and not state.is_game_over and state.current_player == player_number:
+                    await broadcast_to_room(room_id, {
+                        "type": "aim_update",
+                        "player": player_number,
+                        "angle_deg": data.get("angle_deg", 0),
+                        "power": data.get("power", 0),
+                    }, exclude=player_id)
             elif msg_type == "shot_init":
                 state = active_games.get(room_id)
                 if state and not state.is_game_over and state.current_player == player_number:

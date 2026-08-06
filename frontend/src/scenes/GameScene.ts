@@ -33,6 +33,14 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
+  // Opponent aim state (for real-time rendering)
+  private opponentAimAngle = 0;
+  private opponentAimPower = 0;
+
+  // Real-time aim sync stream
+  private lastAimSendTime = 0;
+  private readonly AIM_SYNC_INTERVAL_MS = 50; // ~20 FPS aiming sync
+
   // Simulation settle state
   private isSimulating = false;
   private settleFrameCount = 0;
@@ -89,6 +97,8 @@ export class GameScene extends Phaser.Scene {
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
     this.player2Group = null;
+    this.opponentAimAngle = 0;
+    this.opponentAimPower = 0;
 
     if (gd.player_number) {
       this.myPlayerNum = gd.player_number;
@@ -132,6 +142,7 @@ export class GameScene extends Phaser.Scene {
       (power: number) => {
         this.aimPower = power;
         this.updateAimDisplay();
+        this.sendAimUpdate();
       },
       (power: number) => {
         this.aimPower = power;
@@ -295,13 +306,50 @@ export class GameScene extends Phaser.Scene {
   private drawCueStick(): void {
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
-    if (this.isAiming) return;
     this.hud.drawCueStickAt(
       cue.x,
       cue.y,
       this.aimAngle || 0,
       0.45,
       this.aimPower,
+    );
+  }
+
+  private drawOpponentAimAndCue(): void {
+    const cue = this.ballRenderer.getCueBallSprite();
+    if (!cue || !cue.visible) {
+      this.hud.cueStick.setAlpha(0);
+      return;
+    }
+
+    const ballsList: { number: number; x: number; y: number }[] = [];
+    this.ballRenderer.getAllBalls().forEach((bd) => {
+      if (bd.sprite.visible && bd.sprite.x > 0) {
+        ballsList.push({ number: bd.number, x: bd.sprite.x, y: bd.sprite.y });
+      }
+    });
+
+    const opponentGroup =
+      this.myPlayerNum === 1 ? this.player2Group : this.player1Group;
+
+    // 1. Draw Cue Stick behind white ball
+    this.hud.drawCueStickAt(
+      cue.x,
+      cue.y,
+      this.opponentAimAngle,
+      0.45,
+      this.opponentAimPower,
+    );
+
+    // 2. Draw Aim Line
+    this.hud.drawAim(
+      cue.x,
+      cue.y,
+      this.opponentAimAngle,
+      this.opponentAimPower,
+      ballsList,
+      opponentGroup,
+      7,
     );
   }
 
@@ -350,6 +398,7 @@ export class GameScene extends Phaser.Scene {
 
     this.aimAngle = Math.atan2(dy, dx);
     this.updateAimDisplay();
+    this.sendAimUpdate();
   }
 
   private updateAimDisplay(): void {
@@ -376,6 +425,20 @@ export class GameScene extends Phaser.Scene {
       myGroup,
       ownRemaining,
     );
+  }
+
+  private sendAimUpdate(): void {
+    if (!this.isMyTurn || this.isSimulating) return;
+
+    const now = Date.now();
+    if (now - this.lastAimSendTime >= this.AIM_SYNC_INTERVAL_MS) {
+      this.lastAimSendTime = now;
+      wsClient.send({
+        type: "aim_update",
+        angle_deg: (this.aimAngle * 180) / Math.PI,
+        power: this.aimPower,
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -429,10 +492,15 @@ export class GameScene extends Phaser.Scene {
   update(): void {
     this.ballRenderer.updateShadows();
 
-    if (this.isMyTurn && !this.isSimulating && !this.isAiming) {
-      this.drawCueStick();
-    } else if (!this.isMyTurn || this.isSimulating) {
+    if (!this.isSimulating) {
+      if (this.isMyTurn) {
+        this.drawCueStick();
+      } else {
+        this.drawOpponentAimAndCue();
+      }
+    } else {
       this.hud.cueStick.setAlpha(0);
+      this.hud.hideAim();
     }
 
     const MBody = (Phaser.Physics.Matter as any).Matter.Body;
@@ -697,6 +765,18 @@ export class GameScene extends Phaser.Scene {
         this.hud.setInfo(LANG.waitingOpponent);
         this.hud.updateTurnUI(this.myPlayerNum, false);
       }
+    });
+
+    wsClient.on("aim_update", (data: any) => {
+      if (
+        data.player === this.myPlayerNum ||
+        this.isMyTurn ||
+        this.isSimulating
+      )
+        return;
+
+      this.opponentAimAngle = (data.angle_deg * Math.PI) / 180;
+      this.opponentAimPower = data.power || 0;
     });
 
     wsClient.on("shot_result", (data: any) => {
