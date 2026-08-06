@@ -403,6 +403,15 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                         "angle_deg": data.get("angle_deg", 0),
                         "power": data.get("power", 0),
                         "cue_ball_position": data.get("cue_ball_position"),
+                        "ball_positions": data.get("ball_positions"),
+                    }, exclude=player_id)
+            elif msg_type == "shot_sync":
+                state = active_games.get(room_id)
+                if state and not state.is_game_over and state.current_player == player_number:
+                    await broadcast_to_room(room_id, {
+                        "type": "shot_sync",
+                        "player": player_number,
+                        "balls": data.get("balls"),
                     }, exclude=player_id)
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})

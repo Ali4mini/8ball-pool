@@ -77,18 +77,13 @@ export class BallRenderer {
     this.ballSet = ballSet;
   }
 
-  /**
-   * Generates photorealistic 3D pool ball textures and ground shadow textures procedurally.
-   */
   generateTextures(): void {
     const colors = BALL_COLORS[this.ballSet] || BALL_COLORS.classic;
     const r = BALL_RADIUS;
     const d = BALL_DIAM;
 
-    // 1. Generate Ground Shadow Texture
     this.generateShadowTexture(d);
 
-    // 2. Generate Each Ball Texture (0 to 15)
     for (let num = 0; num <= 15; num++) {
       const textureKey = `ball_${num}`;
       if (this.scene.textures.exists(textureKey)) continue;
@@ -102,28 +97,22 @@ export class BallRenderer {
       ctx.clearRect(0, 0, d, d);
 
       if (num === 0) {
-        // ─── CUE BALL ───────────────────────────────
         this.draw3DSphere(ctx, r, "#ffffff", "#e2e8f0", "#cbd5e1");
-        // Red aim spot on cue ball
         ctx.fillStyle = "#dc2626";
         ctx.beginPath();
         ctx.arc(r + 2, r - 2, 2, 0, Math.PI * 2);
         ctx.fill();
       } else if (num === 8) {
-        // ─── 8-BALL ─────────────────────────────────
         this.draw3DSphere(ctx, r, "#333333", "#111111", "#000000");
         this.drawNumberPatch(ctx, r, "8", "#111111");
       } else if (num <= 7) {
-        // ─── SOLID BALLS (1-7) ──────────────────────
         const lighterColor = this.adjustColor(mainColor, 40);
         const darkerColor = this.adjustColor(mainColor, -50);
         this.draw3DSphere(ctx, r, lighterColor, mainColor, darkerColor);
         this.drawNumberPatch(ctx, r, String(num), "#111111");
       } else {
-        // ─── STRIPE BALLS (9-15) ────────────────────
         this.draw3DSphere(ctx, r, "#ffffff", "#f1f5f9", "#cbd5e1");
 
-        // Colored Stripe Band
         ctx.save();
         ctx.beginPath();
         ctx.arc(r, r, r - 0.5, 0, Math.PI * 2);
@@ -141,16 +130,11 @@ export class BallRenderer {
         this.drawNumberPatch(ctx, r, String(num), "#111111");
       }
 
-      // ─── TOP GLOSS SPECULAR HIGHLIGHT ─────────────
       this.drawGlossHighlight(ctx, r);
-
       canvasTex.refresh();
     }
   }
 
-  /**
-   * Generates a soft radial drop shadow texture
-   */
   private generateShadowTexture(d: number): void {
     const key = "ball_ground_shadow";
     if (this.scene.textures.exists(key)) return;
@@ -282,9 +266,6 @@ export class BallRenderer {
     );
   }
 
-  /**
-   * Create Matter physics balls and ground shadows
-   */
   createBalls(): void {
     this.ballMap.clear();
     this.shadowMap.forEach((s) => s.destroy());
@@ -306,7 +287,6 @@ export class BallRenderer {
     }
 
     positions.forEach(([num, x, y]) => {
-      // 1. Ground Shadow
       const shadow = this.scene.add.image(
         x + 2.5,
         y + 3.5,
@@ -315,7 +295,6 @@ export class BallRenderer {
       shadow.setDepth(1);
       this.shadowMap.set(num, shadow);
 
-      // 2. Matter Physics Ball Image
       const img = this.scene.matter.add.image(x, y, `ball_${num}`, undefined, {
         shape: { type: "circle", radius: BALL_RADIUS },
         restitution: 0.88,
@@ -329,7 +308,6 @@ export class BallRenderer {
       } as any);
       img.setDepth(2);
 
-      // Natural random starting rotation for racked balls
       if (num !== 0) {
         img.setRotation((Phaser.Math.Between(0, 360) * Math.PI) / 180);
       }
@@ -340,23 +318,17 @@ export class BallRenderer {
     });
   }
 
-  /**
-   * Called every frame in GameScene update().
-   * Updates ground shadows and syncs visual 3D texture rolling with ball velocity!
-   */
   updateShadows(): void {
     this.ballMap.forEach((bd, num) => {
       const shadow = this.shadowMap.get(num);
       const sprite = bd.sprite;
 
       if (sprite.visible && sprite.x > -50) {
-        // Update Ground Shadow Position
         if (shadow) {
           shadow.setVisible(true);
           shadow.setPosition(sprite.x + 2.5, sprite.y + 3.5);
         }
 
-        // ─── AUTHENTIC 3D ROLLING ROTATION SYNC ───
         const body = sprite.body as MatterJS.Body;
         if (body && body.velocity) {
           const vx = body.velocity.x;
@@ -364,11 +336,8 @@ export class BallRenderer {
           const speed = Math.hypot(vx, vy);
 
           if (speed > 0.08) {
-            // Roll direction sign relative to horizontal motion
             const rollDirection = vx >= 0 ? 1 : -1;
-            // Angular velocity proportional to linear speed (v / R)
             const rollSpeed = (speed / BALL_RADIUS) * 0.22;
-
             sprite.rotation += rollSpeed * rollDirection;
           }
         }
@@ -378,7 +347,6 @@ export class BallRenderer {
     });
   }
 
-  /** Hide and remove a pocketed ball from physics world. */
   pocketBall(num: number): void {
     const bd = this.ballMap.get(num);
     if (!bd) return;
@@ -393,7 +361,6 @@ export class BallRenderer {
     this.ballMap.delete(num);
   }
 
-  /** Respawn cue ball at head spot. */
   respawnCue(): void {
     let cue = this.ballMap.get(0);
     if (!cue) {
@@ -422,6 +389,7 @@ export class BallRenderer {
     shadow.setDepth(1);
     this.shadowMap.set(0, shadow);
 
+    // FIXED: Unified physics parameters to match createBalls()
     const img = this.scene.matter.add.image(
       CUE_SPOT_X,
       CUE_SPOT_Y,
@@ -429,16 +397,14 @@ export class BallRenderer {
       undefined,
       {
         shape: { type: "circle", radius: BALL_RADIUS },
-        restitution: 0.9,
-        friction: 0.02,
-        frictionAir: 0.015,
+        restitution: 0.88,
+        friction: 0.015,
+        frictionAir: 0.012,
         frictionStatic: 0.01,
         density: 0.005,
-        slop: 0.05,
+        slop: 0,
         label: "ball_0",
-        isBullet: true,
         enableSleeping: false,
-        sleepThreshold: Infinity,
       } as any,
     );
     img.setDepth(2);
@@ -463,7 +429,6 @@ export class BallRenderer {
     return this.ballMap;
   }
 
-  /** Count balls of a given group still on table. */
   countByGroup(group: "solids" | "stripes" | null): number {
     if (!group) return 0;
     let count = 0;
@@ -482,6 +447,48 @@ export class BallRenderer {
       pos[String(bd.number)] = [bd.sprite.x, bd.sprite.y];
     });
     return pos;
+  }
+
+  /**
+   * Captures position [x, y] and velocity [vx, vy] for real-time synchronization
+   */
+  getPhysicsSnapshot(): Record<
+    string,
+    { pos: [number, number]; vel: [number, number] }
+  > {
+    const snapshot: Record<
+      string,
+      { pos: [number, number]; vel: [number, number] }
+    > = {};
+    this.ballMap.forEach((bd) => {
+      const body = bd.sprite.body as MatterJS.Body;
+      snapshot[String(bd.number)] = {
+        pos: [bd.sprite.x, bd.sprite.y],
+        vel: body ? [body.velocity.x, body.velocity.y] : [0, 0],
+      };
+    });
+    return snapshot;
+  }
+
+  /**
+   * Applies physics state (positions and velocities) from shooter tick
+   */
+  applyPhysicsSnapshot(
+    snapshot: Record<string, { pos: [number, number]; vel: [number, number] }>,
+  ): void {
+    Object.entries(snapshot).forEach(([numStr, data]) => {
+      const num = parseInt(numStr, 10);
+      const bd = this.ballMap.get(num);
+      if (bd && bd.sprite.visible) {
+        bd.sprite.setPosition(data.pos[0], data.pos[1]);
+        bd.sprite.setVelocity(data.vel[0], data.vel[1]);
+
+        const shadow = this.shadowMap.get(num);
+        if (shadow) {
+          shadow.setPosition(data.pos[0] + 2.5, data.pos[1] + 3.5);
+        }
+      }
+    });
   }
 
   setPositions(ballPositions: Record<string, [number, number]>): void {

@@ -3,7 +3,7 @@ import { wsClient } from "../network/wsClient";
 import { sendToParent } from "../utils/bridge";
 import { config as gameCfg } from "../config";
 import { LANG } from "../lang";
-import { evaluateShot, ShotEval, Group } from "../rules";
+import { evaluateShot, Group } from "../rules";
 import {
   TABLE_X,
   TABLE_Y,
@@ -15,15 +15,7 @@ import {
   PLAY_B,
   PLAY_W,
   PLAY_H,
-  BALL_RADIUS,
-  BALL_DIAM,
-  POCKET_R,
   CUSHION_W,
-  POCKET_R_INSET,
-  CUE_SPOT_X,
-  CUE_SPOT_Y,
-  RACK_X,
-  RACK_Y,
 } from "../gameConfig";
 import { TableRenderer } from "../rendering/TableRenderer";
 import { BallRenderer } from "../rendering/BallRenderer";
@@ -44,15 +36,18 @@ export class GameScene extends Phaser.Scene {
   // Simulation settle state
   private isSimulating = false;
   private settleFrameCount = 0;
-  private readonly SETTLE_SPEED = 0.2;
-  private readonly SETTLE_FRAMES = 5;
   private readonly SIM_TIMEOUT = 6000;
+  private readonly SETTLE_FRAMES = 5;
   private isLocalShot = true;
   private simStartTime = 0;
   private pocketedBalls: number[] = [];
   private cuePocketed = false;
   private firstContact: number | null = null;
   private pocketSensors: MatterJS.Body[] = [];
+
+  // Real-time physics sync stream
+  private lastSyncTime = 0;
+  private readonly SYNC_INTERVAL_MS = 40; // ~25 FPS live physics stream
 
   // Physics debug overlay
   private debugPanel!: PhysicsDebugPanel;
@@ -297,10 +292,6 @@ export class GameScene extends Phaser.Scene {
     this.hud.showGameOverOverlay(won);
   }
 
-  private updateTurnUI(): void {
-    this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
-  }
-
   private drawCueStick(): void {
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -407,6 +398,7 @@ export class GameScene extends Phaser.Scene {
     this.cuePocketed = false;
     this.firstContact = null;
     this.simStartTime = Date.now();
+    this.lastSyncTime = 0;
 
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -425,6 +417,7 @@ export class GameScene extends Phaser.Scene {
       angle_deg: (this.aimAngle * 180) / Math.PI,
       power: this.aimPower,
       cue_ball_position: [cue.x, cue.y],
+      ball_positions: this.ballRenderer.getPositionsSnapshot(),
     });
 
     this.hud.setInfo(LANG.simulating);
@@ -465,6 +458,18 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.isSimulating) return;
 
+    // Stream live physics snapshot to opponent when playing local shot
+    if (this.isLocalShot) {
+      const now = Date.now();
+      if (now - this.lastSyncTime >= this.SYNC_INTERVAL_MS) {
+        this.lastSyncTime = now;
+        wsClient.send({
+          type: "shot_sync",
+          balls: this.ballRenderer.getPhysicsSnapshot(),
+        });
+      }
+    }
+
     // Clamp near-zero velocities so cushion micro-jitter stops instantly
     let allSettled = true;
     this.ballRenderer.getAllBalls().forEach((bd) => {
@@ -480,7 +485,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     if (Date.now() - this.simStartTime > this.SIM_TIMEOUT) {
-      this.processShotResult();
+      if (this.isLocalShot) this.processShotResult();
       return;
     }
 
@@ -702,6 +707,12 @@ export class GameScene extends Phaser.Scene {
       this.playOpponentShot(data);
     });
 
+    wsClient.on("shot_sync", (data: any) => {
+      if (!this.isLocalShot && this.isSimulating && data.balls) {
+        this.ballRenderer.applyPhysicsSnapshot(data.balls);
+      }
+    });
+
     wsClient.on("groups_assigned", (data: any) => {
       this.player1Group =
         data.player1_group === "solids" ? "solids" : "stripes";
@@ -795,6 +806,11 @@ export class GameScene extends Phaser.Scene {
     this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
     this.hud.setInfo(LANG.simulating);
     this.hud.updateTurnUI(this.myPlayerNum, false);
+
+    // Sync exact pre-shot positions on opponent screen before applying force
+    if (data.ball_positions) {
+      this.ballRenderer.setPositions(data.ball_positions);
+    }
 
     const angleRad = (data.angle_deg * Math.PI) / 180;
     const power = data.power || 0;
