@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { wsClient } from "../network/wsClient";
-import { sendToParent } from "../utils/bridge";
 import { config as gameCfg } from "../config";
 import { LANG } from "../lang";
 import { evaluateShot, Group } from "../rules";
@@ -61,11 +60,13 @@ export class GameScene extends Phaser.Scene {
   private debugPanel!: PhysicsDebugPanel;
   private wallBodies: MatterJS.Body[] = [];
 
-  // Game state
+  // Game state & Profile data
   private player1Name = "";
   private player2Name = "";
   private player1Id = "";
   private player2Id = "";
+  private player1Avatar = "";
+  private player2Avatar = "";
   private skinName = gameCfg.tableSkin || "classic";
   private ballSet = gameCfg.ballSet || "classic";
 
@@ -86,8 +87,11 @@ export class GameScene extends Phaser.Scene {
     const gd = data.gameData || {};
     this.player1Id = gd.player1_id || "";
     this.player1Name = gd.player1_name || "";
+    this.player1Avatar = gd.player1_avatar || "";
     this.player2Id = gd.player2_id || "";
     this.player2Name = gd.player2_name || "";
+    this.player2Avatar = gd.player2_avatar || "";
+
     this.pocketedBalls = [];
     this.cuePocketed = false;
     this.firstContact = null;
@@ -106,6 +110,12 @@ export class GameScene extends Phaser.Scene {
       this.myPlayerNum = 2;
     } else {
       this.myPlayerNum = 1;
+    }
+
+    if (this.myPlayerNum === 1 && !this.player1Avatar) {
+      this.player1Avatar = gameCfg.playerAvatar;
+    } else if (this.myPlayerNum === 2 && !this.player2Avatar) {
+      this.player2Avatar = gameCfg.playerAvatar;
     }
 
     const breakPlayer = gd.break_player || 1;
@@ -135,8 +145,18 @@ export class GameScene extends Phaser.Scene {
       this.player1Name || LANG.player1,
       this.player2Id,
       this.player2Name || LANG.player2,
+      this.player1Avatar,
+      this.player2Avatar,
     );
     this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
+
+    // Start turn timer for break player
+    const activePlayerNum = this.isMyTurn
+      ? this.myPlayerNum
+      : this.myPlayerNum === 1
+        ? 2
+        : 1;
+    this.hud.startTurnTimer(activePlayerNum, 60);
 
     this.hud.setupPowerCallbacks(
       (power: number) => {
@@ -332,7 +352,6 @@ export class GameScene extends Phaser.Scene {
     const opponentGroup =
       this.myPlayerNum === 1 ? this.player2Group : this.player1Group;
 
-    // 1. Draw Cue Stick behind white ball
     this.hud.drawCueStickAt(
       cue.x,
       cue.y,
@@ -341,7 +360,6 @@ export class GameScene extends Phaser.Scene {
       this.opponentAimPower,
     );
 
-    // 2. Draw Aim Line
     this.hud.drawAim(
       cue.x,
       cue.y,
@@ -454,6 +472,7 @@ export class GameScene extends Phaser.Scene {
     this.settleFrameCount = 0;
 
     this.hud.hideAim();
+    this.hud.stopTurnTimer();
     this.hud.setPowerEnabled(false);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
@@ -491,6 +510,7 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════
   update(): void {
     this.ballRenderer.updateShadows();
+    this.hud.updateTimer(); // Update 60s active turn avatar ring frame by frame
 
     if (!this.isSimulating) {
       if (this.isMyTurn) {
@@ -526,7 +546,6 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.isSimulating) return;
 
-    // Stream live physics snapshot to opponent when playing local shot
     if (this.isLocalShot) {
       const now = Date.now();
       if (now - this.lastSyncTime >= this.SYNC_INTERVAL_MS) {
@@ -538,7 +557,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Clamp near-zero velocities so cushion micro-jitter stops instantly
     let allSettled = true;
     this.ballRenderer.getAllBalls().forEach((bd) => {
       const rawBody = bd.sprite.body as any as MatterJS.Body;
@@ -619,14 +637,10 @@ export class GameScene extends Phaser.Scene {
         const winnerName =
           winnerNum === 1 ? this.player1Name : this.player2Name;
 
+        this.hud.stopTurnTimer();
         this.showGameOverOverlay(won);
-        sendToParent("GAME_FINISHED", {
-          winner: winnerId,
-          winner_name: winnerName,
-          reason: evalResult.reason,
-        });
 
-        this.time.delayedCall(2000, () => {
+        this.time.delayedCall(1500, () => {
           this.scene.start("ResultScene", {
             result: {
               winner: winnerId,
@@ -706,6 +720,9 @@ export class GameScene extends Phaser.Scene {
     const nextPlayer = data.current_player;
     this.isMyTurn = nextPlayer === this.myPlayerNum;
 
+    // Reset 60s turn timer for next player
+    this.hud.startTurnTimer(nextPlayer as 1 | 2, 60);
+
     if (this.isMyTurn) {
       this.hud.setTurnText(LANG.yourTurn, "#f97316");
       this.hud.setInfo(ballInHand ? LANG.ballInHand : LANG.aimAndShoot);
@@ -725,24 +742,36 @@ export class GameScene extends Phaser.Scene {
     wsClient.on("game_start", (data: any) => {
       this.player1Id = data.player1_id;
       this.player1Name = data.player1_name;
+      this.player1Avatar =
+        data.player1_avatar ||
+        (this.myPlayerNum === 1 ? gameCfg.playerAvatar : "");
       this.player2Id = data.player2_id;
       this.player2Name = data.player2_name;
+      this.player2Avatar =
+        data.player2_avatar ||
+        (this.myPlayerNum === 2 ? gameCfg.playerAvatar : "");
 
       this.hud.setNames(
         this.player1Id,
         this.player1Name || LANG.player1,
         this.player2Id,
         this.player2Name || LANG.player2,
+        this.player1Avatar,
+        this.player2Avatar,
       );
 
       if (data.ball_positions) {
         this.ballRenderer.setPositions(data.ball_positions);
       }
+
+      const activePlayer = data.break_player || 1;
+      this.hud.startTurnTimer(activePlayer as 1 | 2, 60);
     });
 
     wsClient.on("your_turn", (data: any) => {
       const isMe =
         data.player === this.myPlayerNum || data.player_id === gameCfg.playerId;
+      this.hud.startTurnTimer(data.player as 1 | 2, 60);
       if (isMe) {
         this.isMyTurn = true;
         this.hud.setTurnText(LANG.yourTurn, "#f97316");
@@ -759,6 +788,7 @@ export class GameScene extends Phaser.Scene {
     wsClient.on("opponent_turn", (data: any) => {
       const isMe =
         data.player === this.myPlayerNum || data.player_id === gameCfg.playerId;
+      this.hud.startTurnTimer(data.player as 1 | 2, 60);
       if (!isMe) {
         this.isMyTurn = false;
         this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
@@ -816,8 +846,10 @@ export class GameScene extends Phaser.Scene {
 
       this.player1Id = data.player1_id;
       this.player1Name = data.player1_name;
+      this.player1Avatar = data.player1_avatar || "";
       this.player2Id = data.player2_id;
       this.player2Name = data.player2_name;
+      this.player2Avatar = data.player2_avatar || "";
       this.myPlayerNum = data.player_number;
       this.isMyTurn = data.is_my_turn;
 
@@ -826,8 +858,11 @@ export class GameScene extends Phaser.Scene {
         this.player1Name,
         this.player2Id,
         this.player2Name,
+        this.player1Avatar,
+        this.player2Avatar,
       );
       this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
+      this.hud.startTurnTimer(data.current_player as 1 | 2, 60);
 
       if (data.ball_positions) {
         this.ballRenderer.setPositions(data.ball_positions);
@@ -846,16 +881,12 @@ export class GameScene extends Phaser.Scene {
       this.isSimulating = true;
       this.isMyTurn = false;
 
+      this.hud.stopTurnTimer();
+
       const won = gameCfg.playerId === data.winner;
       this.showGameOverOverlay(won);
 
-      sendToParent("GAME_FINISHED", {
-        winner: data.winner,
-        winner_name: data.winner_name,
-        reason: data.reason,
-      });
-
-      this.time.delayedCall(2000, () => {
+      this.time.delayedCall(1500, () => {
         this.scene.start("ResultScene", { result: data });
       });
     });
@@ -883,11 +914,11 @@ export class GameScene extends Phaser.Scene {
     this.simStartTime = Date.now();
 
     this.hud.hideAim();
+    this.hud.stopTurnTimer();
     this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
     this.hud.setInfo(LANG.simulating);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
-    // Sync exact pre-shot positions on opponent screen before applying force
     if (data.ball_positions) {
       this.ballRenderer.setPositions(data.ball_positions);
     }

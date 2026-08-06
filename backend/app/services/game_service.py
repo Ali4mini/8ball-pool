@@ -150,8 +150,10 @@ class GameState:
     player2_id: str = ""
     player1_name: str = ""
     player2_name: str = ""
-    current_player: int = 0  # 1 or 2 (player number, not ID)
-    player1_group: Optional[int] = None  # 1=solids, 2=stripes
+    player1_avatar: str = ""
+    player2_avatar: str = ""
+    current_player: int = 0  # 1 or 2
+    player1_group: Optional[int] = None
     player2_group: Optional[int] = None
     is_break: bool = True
     is_game_over: bool = False
@@ -484,6 +486,8 @@ class GameService:
         p2_id: str,
         p1_name: str = "Player 1",
         p2_name: str = "Player 2",
+        p1_avatar: str = "",
+        p2_avatar: str = "",
     ) -> GameState:
         balls = shuffle_rack()
         return GameState(
@@ -493,6 +497,8 @@ class GameService:
             player2_id=p2_id,
             player1_name=p1_name,
             player2_name=p2_name,
+            player1_avatar=p1_avatar,
+            player2_avatar=p2_avatar,
             current_player=1,
             is_break=True,
             turn_count=0,

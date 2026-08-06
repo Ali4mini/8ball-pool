@@ -1,35 +1,11 @@
 /**
  * Modern Mobile HUD for 8-Ball Game
- * Features transparent top header, 2x font sizes,
- * visual mini ball type badges (Solids & Stripes icons),
- * auto-fading toast notifications, and 🚫 prohibition warnings for illegal target balls.
+ * Features profile avatar loading, 60s turn timer ring animation,
+ * transparent top header, and mini ball type badges.
  */
 import Phaser from "phaser";
 import { PowerControl } from "./PowerControl";
-import {
-  PLAY_L,
-  PLAY_R,
-  PLAY_T,
-  PLAY_B,
-  BALL_RADIUS,
-  TABLE_X,
-  TABLE_W,
-} from "../gameConfig";
-
-export interface TrajectoryHit {
-  type: "ball" | "cushion";
-  ghostX: number;
-  ghostY: number;
-  hitBallNumber?: number;
-  hitBallX?: number;
-  hitBallY?: number;
-  targetBallDirX?: number;
-  targetBallDirY?: number;
-  cueDeflectDirX?: number;
-  cueDeflectDirY?: number;
-  reflectionDirX?: number;
-  reflectionDirY?: number;
-}
+import { BALL_RADIUS, PLAY_L, PLAY_R, PLAY_T, PLAY_B } from "../gameConfig";
 
 export class HUD {
   private scene: Phaser.Scene;
@@ -37,6 +13,12 @@ export class HUD {
   // Graphics objects
   private aimGraphics: Phaser.GameObjects.Graphics;
   public cueStick: Phaser.GameObjects.Graphics;
+  private timerGraphics: Phaser.GameObjects.Graphics;
+
+  // Turn Timer State
+  private timerActivePlayer: 1 | 2 | null = null;
+  private timerStartTime = 0;
+  private timerDuration = 60000; // 60 seconds in ms
 
   // Power Control Component
   public powerControl!: PowerControl;
@@ -52,8 +34,8 @@ export class HUD {
   private p2GroupBadge!: Phaser.GameObjects.Graphics;
 
   // Avatars
-  private p1AvatarImg?: Phaser.GameObjects.Image;
-  private p2AvatarImg?: Phaser.GameObjects.Image;
+  private p1AvatarContainer?: Phaser.GameObjects.Container;
+  private p2AvatarContainer?: Phaser.GameObjects.Container;
 
   // Floating Toast / Banners
   private toastContainer!: Phaser.GameObjects.Container;
@@ -71,6 +53,7 @@ export class HUD {
 
     this.aimGraphics = scene.add.graphics().setDepth(10);
     this.cueStick = scene.add.graphics().setDepth(11);
+    this.timerGraphics = scene.add.graphics().setDepth(25);
 
     this.createHeaderUI();
     this.createToastUI();
@@ -88,7 +71,7 @@ export class HUD {
     // 1. Player 1 Scorecard (Left)
     this.p1CardBg = this.scene.add.graphics();
     this.p1NameText = this.scene.add.text(80, 8, "Player 1", {
-      font: "bold 36px Tahoma, Arial, sans-serif",
+      font: "bold 32px Tahoma, Arial, sans-serif",
       color: "#38bdf8",
       stroke: "#000000",
       strokeThickness: 5,
@@ -105,7 +88,7 @@ export class HUD {
     this.p2CardBg = this.scene.add.graphics();
     this.p2NameText = this.scene.add
       .text(screenW - 80, 8, "Player 2", {
-        font: "bold 36px Tahoma, Arial, sans-serif",
+        font: "bold 32px Tahoma, Arial, sans-serif",
         color: "#f43f5e",
         stroke: "#000000",
         strokeThickness: 5,
@@ -130,6 +113,60 @@ export class HUD {
       .setOrigin(0.5)
       .setDepth(30)
       .setVisible(false);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  TURN TIMEOUT RING ANIMATION (60s Counter-Clockwise Draining)
+  // ═══════════════════════════════════════════════════════════
+
+  public startTurnTimer(playerNum: 1 | 2, durationSec: number = 60): void {
+    this.timerActivePlayer = playerNum;
+    this.timerStartTime = Date.now();
+    this.timerDuration = durationSec * 1000;
+  }
+
+  public stopTurnTimer(): void {
+    this.timerActivePlayer = null;
+    if (this.timerGraphics) {
+      this.timerGraphics.clear();
+    }
+  }
+
+  public updateTimer(): void {
+    if (!this.timerActivePlayer) {
+      if (this.timerGraphics) this.timerGraphics.clear();
+      return;
+    }
+
+    const elapsed = Date.now() - this.timerStartTime;
+    const remaining = Math.max(0, this.timerDuration - elapsed);
+    const ratio = remaining / this.timerDuration; // 1.0 -> 0.0
+
+    const { width: screenW } = this.scene.scale;
+    const posX = this.timerActivePlayer === 1 ? 40 : screenW - 40;
+    const posY = 40;
+    const radius = 33;
+
+    this.timerGraphics.clear();
+
+    if (ratio <= 0) return;
+
+    // Color transition: Neon Orange (>25% left) -> Warning Red (<=25% left)
+    const color = ratio > 0.25 ? 0xf97316 : 0xef4444;
+
+    // Start angle top (-90 degrees) draining counter-clockwise
+    const startAngle = Phaser.Math.DegToRad(-90);
+    const endAngle = startAngle + Phaser.Math.DegToRad(360 * ratio);
+
+    // Subtle dark background guide ring
+    this.timerGraphics.lineStyle(5, 0x000000, 0.5);
+    this.timerGraphics.strokeCircle(posX, posY, radius);
+
+    // Draining timer arc
+    this.timerGraphics.lineStyle(5, color, 1);
+    this.timerGraphics.beginPath();
+    this.timerGraphics.arc(posX, posY, radius, startAngle, endAngle, false);
+    this.timerGraphics.strokePath();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -258,14 +295,12 @@ export class HUD {
       const lineColor = isLegal ? 0xffffff : 0xef4444;
       const lineAlpha = isLegal ? 0.95 : 0.85;
 
-      // A) Main Aiming Line (Cue ball -> Ghost ball)
       g.lineStyle(4, 0x000000, 0.4);
       g.lineBetween(cx, cy, hit.ghostX, hit.ghostY);
       g.lineStyle(2, lineColor, lineAlpha);
       g.lineBetween(cx, cy, hit.ghostX, hit.ghostY);
 
       if (isLegal) {
-        // B) Ghost Target Ball Ring
         g.fillStyle(0xffffff, 0.15);
         g.fillCircle(hit.ghostX, hit.ghostY, BALL_RADIUS);
         g.lineStyle(1.5, 0xffffff, 0.85);
@@ -273,7 +308,6 @@ export class HUD {
         g.fillStyle(0xffffff, 0.9);
         g.fillCircle(hit.ghostX, hit.ghostY, 2);
 
-        // C) Collision Path Predictions
         if (
           hit.type === "ball" &&
           hit.hitBallX !== undefined &&
@@ -309,7 +343,6 @@ export class HUD {
           g.lineBetween(hit.ghostX, hit.ghostY, bounceEndX, bounceEndY);
         }
       } else {
-        // 🚫 ILLEGAL TARGET WARNING
         this.drawCancelIcon(g, hit.ghostX, hit.ghostY, BALL_RADIUS + 3);
         if (hit.hitBallX !== undefined && hit.hitBallY !== undefined) {
           this.drawCancelIcon(g, hit.hitBallX, hit.hitBallY, BALL_RADIUS + 5);
@@ -330,7 +363,7 @@ export class HUD {
     cueY: number,
     angleRad: number,
     balls: { number: number; x: number; y: number }[],
-  ): TrajectoryHit | null {
+  ) {
     const dx = Math.cos(angleRad);
     const dy = Math.sin(angleRad);
 
@@ -341,7 +374,7 @@ export class HUD {
     const maxY = PLAY_B - r;
 
     let closestDist = Infinity;
-    let bestHit: TrajectoryHit | null = null;
+    let bestHit: any = null;
 
     const combinedR = r * 2;
     const combinedR2 = combinedR * combinedR;
@@ -551,7 +584,7 @@ export class HUD {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  BALL TYPE MINI BADGES (Solids / Stripes Icons)
+  //  BALL TYPE MINI BADGES
   // ═══════════════════════════════════════════════════════════
 
   private drawGroupBadge(
@@ -561,42 +594,26 @@ export class HUD {
     group: "solids" | "stripes",
   ): void {
     g.clear();
-    const r = 14; // Badge Radius
+    const r = 14;
 
     if (group === "solids") {
-      // Mini Solid Ball Icon (Solid Yellow Ball #1)
       g.fillStyle(0xf1c40f, 1);
       g.fillCircle(x, y, r);
-
-      // White Center Patch
       g.fillStyle(0xffffff, 1);
       g.fillCircle(x, y, 6);
-
-      // Top Specular Highlight
       g.fillStyle(0xffffff, 0.4);
       g.fillCircle(x - 4, y - 4, 3);
-
-      // Crisp Outline
       g.lineStyle(2, 0x000000, 0.6);
       g.strokeCircle(x, y, r);
     } else {
-      // Mini Stripe Ball Icon (White ball with Blue Stripe Band)
       g.fillStyle(0xffffff, 1);
       g.fillCircle(x, y, r);
-
-      // Center Stripe Band
       g.fillStyle(0x2980b9, 1);
       g.fillRect(x - 13, y - 6, 26, 12);
-
-      // Stroke outer circle boundary
       g.lineStyle(2, 0x000000, 0.6);
       g.strokeCircle(x, y, r);
-
-      // White Center Patch
       g.fillStyle(0xffffff, 1);
       g.fillCircle(x, y, 5);
-
-      // Top Specular Highlight
       g.fillStyle(0xffffff, 0.4);
       g.fillCircle(x - 4, y - 4, 3);
     }
@@ -611,6 +628,8 @@ export class HUD {
     p1Name: string,
     p2Id: string,
     p2Name: string,
+    p1Avatar?: string,
+    p2Avatar?: string,
   ): void {
     this.p1Id = p1Id;
     this.p1Name = p1Name;
@@ -620,21 +639,100 @@ export class HUD {
     this.p1NameText.setText(p1Name);
     this.p2NameText.setText(p2Name);
 
-    const p1Key = `avatar_${p1Id || "p1"}`;
-    this.generateAvatarTexture(p1Name, 0x38bdf8, p1Key);
-    if (this.p1AvatarImg) this.p1AvatarImg.destroy();
-    this.p1AvatarImg = this.scene.add.image(40, 40, p1Key);
-    this.headerContainer.add(this.p1AvatarImg);
+    this.renderPlayerAvatar(p1Id, p1Name, 0x38bdf8, p1Avatar, false);
+    this.renderPlayerAvatar(p2Id, p2Name, 0xf43f5e, p2Avatar, true);
+  }
 
-    const p2Key = `avatar_${p2Id || "p2"}`;
-    this.generateAvatarTexture(p2Name, 0xf43f5e, p2Key);
-    if (this.p2AvatarImg) this.p2AvatarImg.destroy();
-    this.p2AvatarImg = this.scene.add.image(
-      this.scene.scale.width - 40,
-      40,
-      p2Key,
-    );
-    this.headerContainer.add(this.p2AvatarImg);
+  private renderPlayerAvatar(
+    id: string,
+    name: string,
+    color: number,
+    avatarUrl: string | undefined,
+    isRight: boolean,
+  ): void {
+    const { width: screenW } = this.scene.scale;
+    const posX = isRight ? screenW - 40 : 40;
+    const posY = 40;
+    const textureKey = `avatar_${id || (isRight ? "p2" : "p1")}`;
+
+    if (isRight && this.p2AvatarContainer) {
+      this.p2AvatarContainer.destroy();
+    } else if (!isRight && this.p1AvatarContainer) {
+      this.p1AvatarContainer.destroy();
+    }
+
+    const container = this.scene.add.container(posX, posY);
+    this.headerContainer.add(container);
+
+    if (isRight) this.p2AvatarContainer = container;
+    else this.p1AvatarContainer = container;
+
+    // 1. If texture already exists in Phaser
+    if (this.scene.textures.exists(textureKey)) {
+      this.addAvatarSpriteToContainer(container, textureKey, color);
+      return;
+    }
+
+    // 2. Load cross-origin remote image with Canvas clipping
+    if (
+      avatarUrl &&
+      (avatarUrl.startsWith("http://") ||
+        avatarUrl.startsWith("https://") ||
+        avatarUrl.startsWith("data:image"))
+    ) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = avatarUrl;
+      img.onload = () => {
+        if (this.scene && this.scene.textures) {
+          if (this.scene.textures.exists(textureKey)) {
+            this.scene.textures.remove(textureKey);
+          }
+
+          const size = 64;
+          const canvasTex = this.scene.textures.createCanvas(
+            textureKey,
+            size,
+            size,
+          );
+          if (canvasTex) {
+            const ctx = canvasTex.context;
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.drawImage(img, 0, 0, size, size);
+            canvasTex.refresh();
+          }
+
+          this.addAvatarSpriteToContainer(container, textureKey, color);
+        }
+      };
+      img.onerror = () => {
+        // Fallback to letter avatar
+        this.generateAvatarTexture(name, color, textureKey);
+        this.addAvatarSpriteToContainer(container, textureKey, color);
+      };
+    } else {
+      // Fallback to letter avatar
+      this.generateAvatarTexture(name, color, textureKey);
+      this.addAvatarSpriteToContainer(container, textureKey, color);
+    }
+  }
+
+  private addAvatarSpriteToContainer(
+    container: Phaser.GameObjects.Container,
+    textureKey: string,
+    borderHex: number,
+  ): void {
+    const sprite = this.scene.add.image(0, 0, textureKey);
+    sprite.setDisplaySize(58, 58);
+
+    // Outer glow ring
+    const ring = this.scene.add.graphics();
+    ring.lineStyle(3, borderHex, 1);
+    ring.strokeCircle(0, 0, 29);
+
+    container.add([sprite, ring]);
   }
 
   private generateAvatarTexture(
@@ -657,7 +755,7 @@ export class HUD {
     ctx.lineWidth = 3;
     ctx.stroke();
 
-    const letter = name.charAt(0).toUpperCase();
+    const letter = (name || "?").charAt(0).toUpperCase();
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 32px Tahoma, Arial, sans-serif";
     ctx.textAlign = "center";
@@ -706,7 +804,6 @@ export class HUD {
         ? "solids"
         : "stripes";
 
-    // Draw Mini Ball Badges under Player Names
     this.drawGroupBadge(this.p1GroupBadge, 96, 52, grp1);
     this.drawGroupBadge(this.p2GroupBadge, screenW - 96, 52, grp2);
   }

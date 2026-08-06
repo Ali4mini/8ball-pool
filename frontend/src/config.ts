@@ -5,8 +5,10 @@
 export interface GameConfig {
   playerId: string;
   playerName: string;
+  playerAvatar: string;
   opponentId: string;
   opponentName: string;
+  opponentAvatar: string;
   apiBaseUrl: string;
   wsUrl: string;
   betAmount: number;
@@ -19,7 +21,7 @@ export interface GameConfig {
 export function getConfig(): GameConfig {
   const params = new URLSearchParams(window.location.search);
 
-  // 1. Resolve Room ID (URL param -> sessionStorage -> random fallback)
+  // 1. Resolve Room ID
   let roomId = params.get("roomId");
   if (!roomId) {
     roomId = sessionStorage.getItem("8ball_active_roomId");
@@ -31,7 +33,7 @@ export function getConfig(): GameConfig {
     sessionStorage.setItem("8ball_active_roomId", roomId);
   }
 
-  // 2. Resolve Player ID (URL param -> sessionStorage -> random fallback)
+  // 2. Resolve Player ID
   let playerId = params.get("playerId");
   if (!playerId) {
     playerId = sessionStorage.getItem("8ball_active_playerId");
@@ -51,14 +53,27 @@ export function getConfig(): GameConfig {
     sessionStorage.setItem("8ball_active_playerName", playerName);
   }
 
+  // 4. Resolve Player Avatar URL
+  let playerAvatar = params.get("playerAvatar");
+  if (!playerAvatar) {
+    playerAvatar = sessionStorage.getItem("8ball_active_playerAvatar") || "";
+  } else {
+    sessionStorage.setItem("8ball_active_playerAvatar", playerAvatar);
+  }
+
+  // 5. Resolve Opponent Avatar URL
+  let opponentAvatar = params.get("opponentAvatar") || "";
+
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsHost = params.get("wsUrl") || `${window.location.host}`;
 
   return {
     playerId,
     playerName,
+    playerAvatar,
     opponentId: params.get("opponentId") || "",
     opponentName: params.get("opponentName") || "",
+    opponentAvatar,
     apiBaseUrl: params.get("apiBaseUrl") || "",
     wsUrl: `${wsProtocol}//${wsHost}/ws/game/${roomId}`,
     betAmount: parseInt(params.get("betAmount") || "0", 10),

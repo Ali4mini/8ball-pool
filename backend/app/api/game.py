@@ -25,8 +25,14 @@ room_connections: dict[str, dict[str, WebSocket]] = {}  # room_id -> {player_id 
 # Disconnect grace period tasks: (room_id, player_id) -> asyncio.Task
 disconnect_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
+# Turn timeout tasks: room_id -> asyncio.Task
+turn_timer_tasks: dict[str, asyncio.Task] = {}
+
 # Track which rooms have had their credit callback sent
 credited_rooms: set[str] = set()
+
+# Turn timeout in seconds
+TURN_TIMEOUT_SEC = 60
 
 # Reconnection timeout in seconds
 RECONNECT_TIMEOUT_SEC = 25
@@ -53,6 +59,42 @@ async def broadcast_to_room(room_id: str, message: dict, exclude: Optional[str] 
                     await ws.send_json(message)
                 except Exception as e:
                     logger.warning(f"Broadcast to {pid} failed: {e}")
+
+
+async def start_turn_timeout_task(room_id: str, active_player_num: int):
+    """Authoritative server-side 60s turn timeout task."""
+    if room_id in turn_timer_tasks:
+        turn_timer_tasks[room_id].cancel()
+
+    async def _timeout_worker():
+        try:
+            await asyncio.sleep(TURN_TIMEOUT_SEC)
+            state = active_games.get(room_id)
+            if state and not state.is_game_over and state.current_player == active_player_num:
+                logger.info(f"Turn timeout for player {active_player_num} in room {room_id}")
+                state.is_game_over = True
+                
+                winner_num = 2 if active_player_num == 1 else 1
+                winner_id = state.player2_id if active_player_num == 1 else state.player1_id
+                winner_name = state.player2_name if active_player_num == 1 else state.player1_name
+
+                await broadcast_to_room(room_id, {
+                    "type": "game_over",
+                    "winner": winner_id,
+                    "winner_name": winner_name,
+                    "reason": "time_out",
+                })
+
+                if room_id not in credited_rooms:
+                    credited_rooms.add(room_id)
+                    loser_id = state.player1_id if active_player_num == 1 else state.player2_id
+                    await send_credit_callback(state, winner_id, loser_id)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            turn_timer_tasks.pop(room_id, None)
+
+    turn_timer_tasks[room_id] = asyncio.create_task(_timeout_worker())
 
 
 async def send_credit_callback(state: GameState, winner: str, loser: str):
@@ -90,7 +132,6 @@ async def handle_disconnect_grace_period(room_id: str, player_id: str):
         logger.info(f"Starting {RECONNECT_TIMEOUT_SEC}s disconnect grace period for player {player_id} in room {room_id}")
         await asyncio.sleep(RECONNECT_TIMEOUT_SEC)
 
-        # Timeout expired — check if game is still active and player is still missing
         state = active_games.get(room_id)
         if state and not state.is_game_over:
             connected_in_room = room_connections.get(room_id, {})
@@ -125,10 +166,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
     
     player_id = None
     player_name = None
+    player_avatar = None
     player_number = None
     
     try:
-        # First message must be join_room
         data = await websocket.receive_json()
         
         if data.get("type") != "join_room":
@@ -138,6 +179,7 @@ async def game_websocket(websocket: WebSocket, room_id: str):
         
         player_id = data.get("player_id", f"guest_{random.randint(1000, 9999)}")
         player_name = data.get("player_name", player_id)
+        player_avatar = data.get("player_avatar", "")
 
         # ─── RECONNECTION CHECK ───
         state = active_games.get(room_id)
@@ -150,13 +192,11 @@ async def game_websocket(websocket: WebSocket, room_id: str):
         if is_reconnecting_player:
             player_number = 1 if player_id == state.player1_id else 2
 
-            # Cancel disconnect grace period task
             task_key = (room_id, player_id)
             if task_key in disconnect_tasks:
                 disconnect_tasks[task_key].cancel()
                 disconnect_tasks.pop(task_key, None)
 
-            # Re-register WS connection
             player_connections[player_id] = websocket
             if room_id not in room_connections:
                 room_connections[room_id] = {}
@@ -164,10 +204,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
 
             await redis.sadd(f"room:{room_id}:players", player_id)
             await redis.hset(f"room:{room_id}:names", player_id, player_name)
+            await redis.hset(f"room:{room_id}:avatars", player_id, player_avatar)
 
             logger.info(f"Player {player_id} reconnected to active room {room_id}")
 
-            # Send reconnected event with full current state
             p1_grp = "solids" if state.player1_group == 1 else ("stripes" if state.player1_group == 2 else None)
             p2_grp = "solids" if state.player2_group == 1 else ("stripes" if state.player2_group == 2 else None)
 
@@ -178,15 +218,16 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                 "current_player": state.current_player,
                 "player1_id": state.player1_id,
                 "player1_name": state.player1_name,
+                "player1_avatar": state.player1_avatar,
                 "player2_id": state.player2_id,
                 "player2_name": state.player2_name,
+                "player2_avatar": state.player2_avatar,
                 "ball_positions": {str(k): v for k, v in state.balls.items()},
                 "player1_group": p1_grp,
                 "player2_group": p2_grp,
                 "is_my_turn": state.current_player == player_number,
             })
 
-            # Notify opponent that player reconnected
             await broadcast_to_room(room_id, {
                 "type": "player_reconnected",
                 "player_id": player_id,
@@ -202,6 +243,7 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             if room_exists and room_id not in room_connections:
                 await redis.delete(f"room:{room_id}:players")
                 await redis.delete(f"room:{room_id}:names")
+                await redis.delete(f"room:{room_id}:avatars")
                 active_games.pop(room_id, None)
                 room_exists = False
                 player_count = 0
@@ -214,8 +256,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             if not room_exists:
                 await redis.sadd(f"room:{room_id}:players", player_id)
                 await redis.hset(f"room:{room_id}:names", player_id, player_name)
+                await redis.hset(f"room:{room_id}:avatars", player_id, player_avatar)
                 await redis.expire(f"room:{room_id}:players", 300)
                 await redis.expire(f"room:{room_id}:names", 300)
+                await redis.expire(f"room:{room_id}:avatars", 300)
                 player_number = 1
                 
                 player_connections[player_id] = websocket
@@ -238,8 +282,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
 
                 await redis.sadd(f"room:{room_id}:players", player_id)
                 await redis.hset(f"room:{room_id}:names", player_id, player_name)
+                await redis.hset(f"room:{room_id}:avatars", player_id, player_avatar)
                 await redis.expire(f"room:{room_id}:players", 300)
                 await redis.expire(f"room:{room_id}:names", 300)
+                await redis.expire(f"room:{room_id}:avatars", 300)
                 
                 player_connections[player_id] = websocket
                 room_connections[room_id][player_id] = websocket
@@ -247,11 +293,13 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                 
                 p1_id = None
                 p1_name = None
+                p1_avatar = ""
                 members = await redis.smembers(f"room:{room_id}:players")
                 for mid in members:
                     if mid != player_id:
                         p1_id = mid
                         p1_name = await redis.hget(f"room:{room_id}:names", mid) or mid
+                        p1_avatar = await redis.hget(f"room:{room_id}:avatars", mid) or ""
                 
                 await websocket.send_json({
                     "type": "room_joined",
@@ -259,12 +307,14 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     "player_number": 2,
                     "is_first": False,
                     "opponent_name": p1_name,
+                    "opponent_avatar": p1_avatar,
                 })
                 
                 await broadcast_to_room(room_id, {
                     "type": "opponent_joined",
                     "opponent_id": player_id,
                     "opponent_name": player_name,
+                    "opponent_avatar": player_avatar,
                 }, exclude=player_id)
                 
                 state = game_service.create_initial_state(
@@ -273,6 +323,8 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     p2_id=player_id,
                     p1_name=p1_name or "Player 1",
                     p2_name=player_name,
+                    p1_avatar=p1_avatar,
+                    p2_avatar=player_avatar,
                 )
                 active_games[room_id] = state
                 
@@ -280,8 +332,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     "type": "game_start",
                     "player1_id": p1_id,
                     "player1_name": p1_name,
+                    "player1_avatar": p1_avatar,
                     "player2_id": player_id,
                     "player2_name": player_name,
+                    "player2_avatar": player_avatar,
                     "break_player": 1,
                     "ball_positions": {str(k): v for k, v in state.balls.items()},
                 })
@@ -293,6 +347,8 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     "message": "Break!",
                 })
 
+                await start_turn_timeout_task(room_id, 1)
+
         # ─── MAIN MESSAGE LOOP ───
         async def process_shot(shot_data: dict):
             state = active_games.get(room_id)
@@ -303,6 +359,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             if state.current_player != player_number:
                 await websocket.send_json({"type": "error", "message": "Not your turn"})
                 return
+
+            # Cancel active turn timeout task while shot is simulating
+            if room_id in turn_timer_tasks:
+                turn_timer_tasks[room_id].cancel()
 
             angle_deg = shot_data.get("angle_deg", 0)
             power = shot_data.get("power", 5)
@@ -327,7 +387,6 @@ async def game_websocket(websocket: WebSocket, room_id: str):
 
             events = result.get("events", [])
 
-            # Broadcast generated events (such as groups_assigned)
             for evt in events:
                 if evt.get("type") == "groups_assigned":
                     await broadcast_to_room(room_id, evt)
@@ -375,6 +434,7 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             next_player = state.current_player
             next_pid = state.player1_id if next_player == 1 else state.player2_id
             other_pid = state.opponent_id(next_player)
+            
             await send_to_player(next_pid, {
                 "type": "your_turn",
                 "player": next_player,
@@ -388,6 +448,9 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                 "player_name": state.player_name_for_number(next_player),
             })
 
+            # Start 60s turn timer for next player
+            await start_turn_timeout_task(room_id, next_player)
+
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type")
@@ -395,7 +458,6 @@ async def game_websocket(websocket: WebSocket, room_id: str):
             if msg_type == "shoot":
                 await process_shot(data)
             elif msg_type == "aim_update":
-                # Forward live aiming angle/power to opponent
                 state = active_games.get(room_id)
                 if state and not state.is_game_over and state.current_player == player_number:
                     await broadcast_to_room(room_id, {
@@ -438,7 +500,6 @@ async def game_websocket(websocket: WebSocket, room_id: str):
 
             state = active_games.get(room_id)
             if state and not state.is_game_over:
-                # Notify opponent of disconnection
                 await broadcast_to_room(room_id, {
                     "type": "player_disconnected",
                     "player_id": player_id,
@@ -446,7 +507,6 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     "message": f"حریف قطع شد. {RECONNECT_TIMEOUT_SEC} ثانیه مهلت برای اتصال مجدد...",
                 }, exclude=player_id)
 
-                # Start grace period task
                 task_key = (room_id, player_id)
                 if task_key not in disconnect_tasks:
                     disconnect_tasks[task_key] = asyncio.create_task(
@@ -459,6 +519,10 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                 if remaining == 0 and (not state or state.is_game_over):
                     await redis.delete(f"room:{room_id}:players")
                     await redis.delete(f"room:{room_id}:names")
+                    await redis.delete(f"room:{room_id}:avatars")
+                    if room_id in turn_timer_tasks:
+                        turn_timer_tasks[room_id].cancel()
+                        turn_timer_tasks.pop(room_id, None)
                     active_games.pop(room_id, None)
                     credited_rooms.discard(room_id)
 
@@ -474,6 +538,9 @@ async def force_end_game(room_id: str):
     state = active_games.get(room_id)
     if state:
         state.is_game_over = True
+        if room_id in turn_timer_tasks:
+            turn_timer_tasks[room_id].cancel()
+            turn_timer_tasks.pop(room_id, None)
         await broadcast_to_room(room_id, {
             "type": "game_over",
             "winner": "",
