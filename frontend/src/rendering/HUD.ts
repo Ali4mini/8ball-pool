@@ -16,8 +16,13 @@ export class HUD {
   private timerGraphics: Phaser.GameObjects.Graphics;
 
   // Last drawn aim parameters for caching
-  private lastDrawnAngleRad = 0;
-  private lastDrawnPower = 0;
+  private lastDrawnAngleRad = Number.NaN;
+  private lastDrawnPower = Number.NaN;
+  private lastDrawnCx = Number.NaN;
+  private lastDrawnCy = Number.NaN;
+  private lastDrawnBallsKey = "";
+  private lastDrawnGroup: any = null;
+  private lastDrawnOwnRemaining = Number.NaN;
 
   // Turn Timer State
   private timerActivePlayer: 1 | 2 | null = null;
@@ -280,11 +285,18 @@ export class HUD {
     myGroup: any = null,
     ownRemaining: number = 7,
   ): void {
-    const angleChanged =
-      Math.abs(angleRad - this.lastDrawnAngleRad) > 0.01;
+    const ballsKey = balls
+      .map((ball) => `${ball.number}:${ball.x}:${ball.y}`)
+      .join("|");
+    const angleChanged = Math.abs(angleRad - this.lastDrawnAngleRad) > 0.01;
     const powerChanged = Math.abs(power - this.lastDrawnPower) > 0.1;
+    const positionChanged = cx !== this.lastDrawnCx || cy !== this.lastDrawnCy;
+    const sceneChanged =
+      ballsKey !== this.lastDrawnBallsKey ||
+      myGroup !== this.lastDrawnGroup ||
+      ownRemaining !== this.lastDrawnOwnRemaining;
 
-    if (!angleChanged && !powerChanged) {
+    if (!angleChanged && !powerChanged && !positionChanged && !sceneChanged) {
       this.drawCueStickAt(cx, cy, angleRad, 1, power);
       return;
     }
@@ -367,11 +379,24 @@ export class HUD {
 
     this.lastDrawnAngleRad = angleRad;
     this.lastDrawnPower = power;
+    this.lastDrawnCx = cx;
+    this.lastDrawnCy = cy;
+    this.lastDrawnBallsKey = ballsKey;
+    this.lastDrawnGroup = myGroup;
+    this.lastDrawnOwnRemaining = ownRemaining;
   }
 
   public hideAim(): void {
     this.aimGraphics.clear();
     this.cueStick.clear();
+    // The graphics are gone, so the next draw must rebuild the trajectory.
+    this.lastDrawnAngleRad = Number.NaN;
+    this.lastDrawnPower = Number.NaN;
+    this.lastDrawnCx = Number.NaN;
+    this.lastDrawnCy = Number.NaN;
+    this.lastDrawnBallsKey = "";
+    this.lastDrawnGroup = null;
+    this.lastDrawnOwnRemaining = Number.NaN;
   }
 
   private calculateTrajectory(
