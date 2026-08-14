@@ -105,6 +105,8 @@ export class GameScene extends Phaser.Scene {
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
     this.player2Group = null;
+    this.opponentAimTargetAngle = 0;
+    this.opponentAimTargetPower = 0;
     this.opponentAimAngle = 0;
     this.opponentAimPower = 0;
 
@@ -464,7 +466,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private interpolateOpponentAim(): void {
-    const interpolationSpeed = 0.15; // 15% per frame towards target
+    const interpolationSpeed = 0.15;
     const angleDelta = this.wrapAngle(
       this.opponentAimTargetAngle - this.opponentAimAngle,
     );
@@ -480,9 +482,7 @@ export class GameScene extends Phaser.Scene {
     let wrapped = delta % TWO_PI;
     if (wrapped > PI) wrapped -= TWO_PI;
     if (wrapped < -PI) wrapped += TWO_PI;
-    // Clamp tiny floating-point residuals
-    if (Math.abs(wrapped) < 1e-10) return 0;
-    return wrapped;
+    return Math.abs(wrapped) < 1e-10 ? 0 : wrapped;
   }
 
   // ═══════════════════════════════════════════════════════════
