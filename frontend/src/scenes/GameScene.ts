@@ -32,13 +32,17 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
-  // Opponent aim state (for real-time rendering)
+  // Opponent aim state (raw received from network, not yet interpolated)
+  private opponentAimTargetAngle = 0;
+  private opponentAimTargetPower = 0;
+
+  // Smoothed opponent aim state (interpolated every render frame)
   private opponentAimAngle = 0;
   private opponentAimPower = 0;
 
   // Real-time aim sync stream
   private lastAimSendTime = 0;
-  private readonly AIM_SYNC_INTERVAL_MS = 50; // ~20 FPS aiming sync
+  private readonly AIM_SYNC_INTERVAL_MS = 25; // ~40 FPS aiming sync
 
   // Simulation settle state
   private isSimulating = false;
@@ -459,6 +463,28 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private interpolateOpponentAim(): void {
+    const interpolationSpeed = 0.15; // 15% per frame towards target
+    const angleDelta = this.wrapAngle(
+      this.opponentAimTargetAngle - this.opponentAimAngle,
+    );
+    this.opponentAimAngle += angleDelta * interpolationSpeed;
+
+    const powerDelta = this.opponentAimTargetPower - this.opponentAimPower;
+    this.opponentAimPower += powerDelta * interpolationSpeed;
+  }
+
+  private wrapAngle(delta: number): number {
+    const PI = Math.PI;
+    const TWO_PI = 2 * PI;
+    let wrapped = delta % TWO_PI;
+    if (wrapped > PI) wrapped -= TWO_PI;
+    if (wrapped < -PI) wrapped += TWO_PI;
+    // Clamp tiny floating-point residuals
+    if (Math.abs(wrapped) < 1e-10) return 0;
+    return wrapped;
+  }
+
   // ═══════════════════════════════════════════════════════════
   //  SHOT EXECUTION
   // ═══════════════════════════════════════════════════════════
@@ -516,6 +542,7 @@ export class GameScene extends Phaser.Scene {
       if (this.isMyTurn) {
         this.drawCueStick();
       } else {
+        this.interpolateOpponentAim();
         this.drawOpponentAimAndCue();
       }
     } else {
@@ -805,8 +832,8 @@ export class GameScene extends Phaser.Scene {
       )
         return;
 
-      this.opponentAimAngle = (data.angle_deg * Math.PI) / 180;
-      this.opponentAimPower = data.power || 0;
+      this.opponentAimTargetAngle = (data.angle_deg * Math.PI) / 180;
+      this.opponentAimTargetPower = data.power || 0;
     });
 
     wsClient.on("shot_result", (data: any) => {

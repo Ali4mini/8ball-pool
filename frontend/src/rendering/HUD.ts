@@ -15,6 +15,10 @@ export class HUD {
   public cueStick: Phaser.GameObjects.Graphics;
   private timerGraphics: Phaser.GameObjects.Graphics;
 
+  // Last drawn aim parameters for caching
+  private lastDrawnAngleRad = 0;
+  private lastDrawnPower = 0;
+
   // Turn Timer State
   private timerActivePlayer: 1 | 2 | null = null;
   private timerStartTime = 0;
@@ -276,6 +280,15 @@ export class HUD {
     myGroup: any = null,
     ownRemaining: number = 7,
   ): void {
+    const angleChanged =
+      Math.abs(angleRad - this.lastDrawnAngleRad) > 0.01;
+    const powerChanged = Math.abs(power - this.lastDrawnPower) > 0.1;
+
+    if (!angleChanged && !powerChanged) {
+      this.drawCueStickAt(cx, cy, angleRad, 1, power);
+      return;
+    }
+
     this.aimGraphics.clear();
 
     const hit = this.calculateTrajectory(cx, cy, angleRad, balls);
@@ -351,6 +364,9 @@ export class HUD {
     }
 
     this.drawCueStickAt(cx, cy, angleRad, 1, power);
+
+    this.lastDrawnAngleRad = angleRad;
+    this.lastDrawnPower = power;
   }
 
   public hideAim(): void {
