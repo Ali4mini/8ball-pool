@@ -99,3 +99,65 @@ export function sampleTrajectory(
 
   return { balls, finished };
 }
+
+// ═══════════════════════════════════════════════════════════
+//  Aim recording / replay
+// ═══════════════════════════════════════════════════════════
+
+/** One recorded aim sample. `a` is angle in degrees, `p` is power (0..1). */
+export type AimSample = { t: number; a: number; p: number };
+
+export interface AimReplayState {
+  angleDeg: number;
+  power: number;
+  /** True once `elapsedMs` has reached the final sample. */
+  finished: boolean;
+}
+
+const wrapAngleDeg = (delta: number): number => {
+  let wrapped = delta % 360;
+  if (wrapped > 180) wrapped -= 360;
+  if (wrapped < -180) wrapped += 360;
+  return Math.abs(wrapped) < 1e-9 ? 0 : wrapped;
+};
+
+const normalizeDeg = (angle: number): number => ((angle % 360) + 360) % 360;
+
+/**
+ * Samples a recorded aim trajectory at `elapsedMs` (ms since replay start).
+ * The angle interpolates along the shortest path across 0°/360°.
+ */
+export function sampleAim(
+  samples: AimSample[],
+  elapsedMs: number,
+): AimReplayState {
+  if (samples.length === 0) {
+    return { angleDeg: 0, power: 0, finished: true };
+  }
+
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+
+  if (elapsedMs <= first.t) {
+    return { angleDeg: first.a, power: first.p, finished: false };
+  }
+  if (elapsedMs >= last.t) {
+    return { angleDeg: last.a, power: last.p, finished: true };
+  }
+
+  for (let i = 0; i < samples.length - 1; i++) {
+    const from = samples[i];
+    const to = samples[i + 1];
+    if (elapsedMs >= from.t && elapsedMs <= to.t) {
+      const dt = to.t - from.t;
+      const alpha = dt > 0 ? (elapsedMs - from.t) / dt : 0;
+      return {
+        angleDeg: normalizeDeg(from.a + wrapAngleDeg(to.a - from.a) * alpha),
+        power: from.p + (to.p - from.p) * alpha,
+        finished: false,
+      };
+    }
+  }
+
+  return { angleDeg: last.a, power: last.p, finished: false };
+}

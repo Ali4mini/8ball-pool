@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTrajectoryFrame,
+  sampleAim,
   sampleTrajectory,
   TrajectoryFrame,
 } from "../src/utils/trajectory";
@@ -92,5 +93,62 @@ describe("sampleTrajectory", () => {
     const state = sampleTrajectory([], 0);
     expect(state.finished).toBe(true);
     expect(state.balls).toEqual([]);
+  });
+});
+
+describe("sampleAim", () => {
+  const samples = [
+    { t: 0, a: 0, p: 0.2 },
+    { t: 100, a: 90, p: 0.6 },
+    { t: 200, a: 90, p: 0.8 },
+  ];
+
+  it("returns the first sample before any elapsed time", () => {
+    const state = sampleAim(samples, 0);
+    expect(state.finished).toBe(false);
+    expect(state.angleDeg).toBe(0);
+    expect(state.power).toBeCloseTo(0.2);
+  });
+
+  it("interpolates angle and power at a midpoint", () => {
+    const state = sampleAim(samples, 50);
+    expect(state.angleDeg).toBeCloseTo(45);
+    expect(state.power).toBeCloseTo(0.4);
+  });
+
+  it("interpolates power-only between adjacent samples with the same angle", () => {
+    const state = sampleAim(samples, 150);
+    expect(state.angleDeg).toBeCloseTo(90);
+    expect(state.power).toBeCloseTo(0.7);
+  });
+
+  it("marks the replay finished at the final sample", () => {
+    const state = sampleAim(samples, 200);
+    expect(state.finished).toBe(true);
+    expect(state.angleDeg).toBe(90);
+    expect(state.power).toBeCloseTo(0.8);
+  });
+
+  it("clamps past the end and stays finished", () => {
+    const state = sampleAim(samples, 500);
+    expect(state.finished).toBe(true);
+    expect(state.angleDeg).toBe(90);
+    expect(state.power).toBeCloseTo(0.8);
+  });
+
+  it("takes the shortest angular path across 0 degrees", () => {
+    const acrossZero = [
+      { t: 0, a: 350, p: 0.5 },
+      { t: 100, a: 10, p: 0.5 },
+    ];
+    const state = sampleAim(acrossZero, 50);
+    expect(state.angleDeg).toBeCloseTo(0);
+  });
+
+  it("handles an empty sample list as finished", () => {
+    const state = sampleAim([], 0);
+    expect(state.finished).toBe(true);
+    expect(state.angleDeg).toBe(0);
+    expect(state.power).toBe(0);
   });
 });

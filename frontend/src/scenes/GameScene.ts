@@ -22,7 +22,7 @@ import { HUD } from "../rendering/HUD";
 import { PhysicsDebugPanel } from "../rendering/PhysicsDebugPanel";
 import { NetworkDiagnosticsPanel } from "../rendering/NetworkDiagnosticsPanel";
 import { addUniqueNumbers, getCollisionPairs } from "../utils/collisionPairs";
-import { TrajectoryFrame } from "../utils/trajectory";
+import { AimSample, sampleAim, TrajectoryFrame } from "../utils/trajectory";
 
 interface PendingAuthoritativeShotResult {
   ball_positions: Record<string, [number, number]> | null;
@@ -42,17 +42,26 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
-  // Opponent aim state (raw received from network, not yet interpolated)
-  private opponentAimTargetAngle = 0;
-  private opponentAimTargetPower = 0;
-
-  // Smoothed opponent aim state (interpolated every render frame)
+  // Opponent aim state (driven by the recorded aim replay)
   private opponentAimAngle = 0;
   private opponentAimPower = 0;
 
-  // Real-time aim sync stream
-  private lastAimSendTime = 0;
-  private readonly AIM_SYNC_INTERVAL_MS = 25; // ~40 FPS aiming sync
+  // Aim recording (shooter side) — recorded at ~50 FPS, replayed by the viewer
+  private aimSessionActive = false;
+  private aimRecording = false;
+  private aimRecordStart = 0;
+  private lastAimRecordTime = Number.NEGATIVE_INFINITY;
+  private recordedAimSamples: AimSample[] = [];
+  private lastAimChunkSendTime = 0;
+  private readonly AIM_RECORD_INTERVAL_MS = 20; // 50 FPS >= 45 FPS
+  private readonly AIM_CHUNK_INTERVAL_MS = 500;
+  private readonly AIM_CHUNK_SAMPLE_THRESHOLD = 25;
+  private aimChunkSequence = 0;
+
+  // Aim replay (viewer side) — plays before the ball trajectory replay
+  private aimSamples: AimSample[] = [];
+  private aimReplayActive = false;
+  private aimReplayStartAt = 0;
 
   // Simulation settle state
   private isSimulating = false;
@@ -120,14 +129,18 @@ export class GameScene extends Phaser.Scene {
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
     this.player2Group = null;
-    this.opponentAimTargetAngle = 0;
-    this.opponentAimTargetPower = 0;
     this.opponentAimAngle = 0;
     this.opponentAimPower = 0;
+    this.aimSessionActive = false;
+    this.aimRecording = false;
+    this.recordedAimSamples = [];
+    this.aimSamples = [];
+    this.aimReplayActive = false;
     this.pendingAuthoritativeShotResult = null;
     this.remoteShotReplayStarted = false;
     this.lastChunkSendTime = 0;
     this.shotChunkSequence = 0;
+    this.aimChunkSequence = 0;
 
     if (gd.player_number) {
       this.myPlayerNum = gd.player_number;
@@ -188,8 +201,8 @@ export class GameScene extends Phaser.Scene {
     this.hud.setupPowerCallbacks(
       (power: number) => {
         this.aimPower = power;
+        this.startAimSession();
         this.updateAimDisplay();
-        this.sendAimUpdate();
       },
       (power: number) => {
         this.aimPower = power;
@@ -445,8 +458,8 @@ export class GameScene extends Phaser.Scene {
     if (Math.hypot(dx, dy) < 15) return;
 
     this.aimAngle = Math.atan2(dy, dx);
+    this.startAimSession();
     this.updateAimDisplay();
-    this.sendAimUpdate();
   }
 
   private updateAimDisplay(): void {
@@ -475,38 +488,92 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private sendAimUpdate(): void {
-    if (!this.isMyTurn || this.isSimulating) return;
+  /**
+   * The aim preview is recorded like the shot trajectory, transferred in
+   * chunks, and only rendered by the viewer once fully received. This method
+   * lazily opens the recording session and throttles samples to >= 45 FPS.
+   */
+  private startAimSession(): void {
+    this.aimSessionActive = true;
+  }
+
+  private recordAimSample(): void {
+    if (!this.isMyTurn || this.isSimulating || !this.aimSessionActive) return;
+
+    if (!this.aimRecording) {
+      this.aimRecording = true;
+      this.aimRecordStart = Date.now();
+      this.lastAimRecordTime = Number.NEGATIVE_INFINITY;
+    }
 
     const now = Date.now();
-    if (now - this.lastAimSendTime >= this.AIM_SYNC_INTERVAL_MS) {
-      this.lastAimSendTime = now;
-      wsClient.send({
-        type: "aim_update",
-        angle_deg: (this.aimAngle * 180) / Math.PI,
-        power: this.aimPower,
+    const t = now - this.aimRecordStart;
+    if (t - this.lastAimRecordTime < this.AIM_RECORD_INTERVAL_MS) return;
+    this.lastAimRecordTime = t;
+
+    this.recordedAimSamples.push({
+      t,
+      a: (this.aimAngle * 180) / Math.PI,
+      p: this.aimPower,
+    });
+
+    const shouldSend =
+      this.recordedAimSamples.length >= this.AIM_CHUNK_SAMPLE_THRESHOLD ||
+      (this.recordedAimSamples.length > 0 &&
+        now - this.lastAimChunkSendTime >= this.AIM_CHUNK_INTERVAL_MS);
+    if (!shouldSend) return;
+
+    const samples = this.recordedAimSamples;
+    this.recordedAimSamples = [];
+    this.lastAimChunkSendTime = now;
+    wsClient.send({
+      type: "aim_chunk",
+      sequence: ++this.aimChunkSequence,
+      samples,
+    });
+  }
+
+  private flushAimRecording(): void {
+    if (this.aimRecording && this.aimSessionActive) {
+      this.recordedAimSamples.push({
+        t: Date.now() - this.aimRecordStart,
+        a: (this.aimAngle * 180) / Math.PI,
+        p: this.aimPower,
       });
     }
+    if (this.recordedAimSamples.length > 0) {
+      wsClient.send({
+        type: "aim_chunk",
+        sequence: ++this.aimChunkSequence,
+        samples: this.recordedAimSamples,
+      });
+    }
+    this.recordedAimSamples = [];
+    this.aimRecording = false;
+    this.aimSessionActive = false;
   }
 
-  private interpolateOpponentAim(): void {
-    const interpolationSpeed = 0.15;
-    const angleDelta = this.wrapAngle(
-      this.opponentAimTargetAngle - this.opponentAimAngle,
+  /** Advances the recorded opponent aim replay once per render frame. */
+  private advanceAimReplay(): void {
+    if (!this.aimReplayActive) return;
+
+    const state = sampleAim(
+      this.aimSamples,
+      Date.now() - this.aimReplayStartAt,
     );
-    this.opponentAimAngle += angleDelta * interpolationSpeed;
-
-    const powerDelta = this.opponentAimTargetPower - this.opponentAimPower;
-    this.opponentAimPower += powerDelta * interpolationSpeed;
+    this.opponentAimAngle = (state.angleDeg * Math.PI) / 180;
+    this.opponentAimPower = state.power;
+    if (state.finished) this.aimReplayActive = false;
   }
 
-  private wrapAngle(delta: number): number {
-    const PI = Math.PI;
-    const TWO_PI = 2 * PI;
-    let wrapped = delta % TWO_PI;
-    if (wrapped > PI) wrapped -= TWO_PI;
-    if (wrapped < -PI) wrapped += TWO_PI;
-    return Math.abs(wrapped) < 1e-10 ? 0 : wrapped;
+  private beginAimReplay(): void {
+    this.aimReplayActive = this.aimSamples.length > 0;
+    this.aimReplayStartAt = Date.now();
+  }
+
+  private resetAimReplay(): void {
+    this.aimSamples = [];
+    this.aimReplayActive = false;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -532,6 +599,7 @@ export class GameScene extends Phaser.Scene {
     this.simStartTime = Date.now();
     this.lastChunkSendTime = 0;
     this.shotChunkSequence = 0;
+    this.flushAimRecording();
     this.ballRenderer.beginTrajectoryRecording();
 
     const cue = this.ballRenderer.getCueBallSprite();
@@ -563,8 +631,19 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.ballRenderer.updateRemotePlayback();
 
-    // Start the recorded replay once the trajectory is fully buffered.
-    if (this.pendingAuthoritativeShotResult && !this.remoteShotReplayStarted) {
+    // Record the local aim preview for transfer (>= 45 FPS sampling).
+    if (this.aimSessionActive) this.recordAimSample();
+
+    // Advance the opponent's recorded aim replay.
+    this.advanceAimReplay();
+
+    // Start the ball replay once the aim replay has finished AND the full
+    // trajectory is buffered.
+    if (
+      !this.aimReplayActive &&
+      this.pendingAuthoritativeShotResult &&
+      !this.remoteShotReplayStarted
+    ) {
       this.remoteShotReplayStarted = this.ballRenderer.startRemoteReplay(
         Date.now(),
       );
@@ -587,12 +666,11 @@ export class GameScene extends Phaser.Scene {
       this.ballRenderer.getRemotePlaybackDiagnostics(),
     );
 
-    if (!this.isSimulating) {
+    if (this.aimReplayActive) {
+      this.drawOpponentAimAndCue();
+    } else if (!this.isSimulating) {
       if (this.isMyTurn) {
         this.drawCueStick();
-      } else {
-        this.interpolateOpponentAim();
-        this.drawOpponentAimAndCue();
       }
     } else {
       this.hud.cueStick.setAlpha(0);
@@ -913,16 +991,11 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    wsClient.on("aim_update", (data: any) => {
-      if (
-        data.player === this.myPlayerNum ||
-        this.isMyTurn ||
-        this.isSimulating
-      )
-        return;
-
-      this.opponentAimTargetAngle = (data.angle_deg * Math.PI) / 180;
-      this.opponentAimTargetPower = data.power || 0;
+    wsClient.on("aim_chunk", (data: any) => {
+      if (this.isMyTurn || this.isLocalShot) return;
+      const samples = data.samples as AimSample[] | undefined;
+      if (!samples || samples.length === 0) return;
+      this.aimSamples.push(...samples);
     });
 
     wsClient.on("shot_result", (data: any) => {
@@ -1040,7 +1113,6 @@ export class GameScene extends Phaser.Scene {
     this.hud.setInfo(LANG.waitingShotData);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
-    const angleRad = (data.angle_deg * Math.PI) / 180;
     const cuePos = data.cue_ball_position;
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -1056,8 +1128,7 @@ export class GameScene extends Phaser.Scene {
     this.remoteShotReplayStarted = false;
     this.pendingAuthoritativeShotResult = null;
     this.networkDiagnostics.beginRemoteShot();
-
-    this.hud.drawOpponentCueStick(cue.x, cue.y, angleRad);
+    this.beginAimReplay();
   }
 
   /** Applies the server-confirmed final state once the recorded replay ends. */
@@ -1077,5 +1148,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.isSimulating = false;
+    this.resetAimReplay();
   }
 }

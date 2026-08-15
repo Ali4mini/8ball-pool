@@ -569,11 +569,6 @@ export class HUD {
     this.cueStick.lineBetween(startX, startY, tipX, tipY);
   }
 
-  public drawOpponentCueStick(cx: number, cy: number, angleRad: number): void {
-    this.drawCueStickAt(cx, cy, angleRad, 0.8, 4);
-    this.scene.time.delayedCall(600, () => this.hideAim());
-  }
-
   private isTargetBallLegal(
     ballNum: number,
     myGroup: any,
