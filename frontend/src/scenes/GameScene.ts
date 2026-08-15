@@ -17,9 +17,19 @@ import {
   CUSHION_W,
 } from "../gameConfig";
 import { TableRenderer } from "../rendering/TableRenderer";
-import { BallRenderer } from "../rendering/BallRenderer";
+import {
+  BallRenderer,
+  PhysicsSnapshot,
+} from "../rendering/BallRenderer";
 import { HUD } from "../rendering/HUD";
 import { PhysicsDebugPanel } from "../rendering/PhysicsDebugPanel";
+import { NetworkDiagnosticsPanel } from "../rendering/NetworkDiagnosticsPanel";
+import { addUniqueNumbers, getCollisionPairs } from "../utils/collisionPairs";
+
+interface PendingRemoteShotSync {
+  sequence: number;
+  balls: PhysicsSnapshot;
+}
 
 export class GameScene extends Phaser.Scene {
   // Ball renderer
@@ -32,13 +42,17 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
-  // Opponent aim state (for real-time rendering)
+  // Opponent aim state (raw received from network, not yet interpolated)
+  private opponentAimTargetAngle = 0;
+  private opponentAimTargetPower = 0;
+
+  // Smoothed opponent aim state (interpolated every render frame)
   private opponentAimAngle = 0;
   private opponentAimPower = 0;
 
   // Real-time aim sync stream
   private lastAimSendTime = 0;
-  private readonly AIM_SYNC_INTERVAL_MS = 50; // ~20 FPS aiming sync
+  private readonly AIM_SYNC_INTERVAL_MS = 25; // ~40 FPS aiming sync
 
   // Simulation settle state
   private isSimulating = false;
@@ -55,9 +69,14 @@ export class GameScene extends Phaser.Scene {
   // Real-time physics sync stream
   private lastSyncTime = 0;
   private readonly SYNC_INTERVAL_MS = 40; // ~25 FPS live physics stream
+  private localShotSyncSequence = 0;
+  private pendingRemoteShotSync: PendingRemoteShotSync | null = null;
+  private lastAppliedRemoteShotSyncSequence = -1;
+  private fallbackRemoteShotSyncSequence = 0;
 
   // Physics debug overlay
   private debugPanel!: PhysicsDebugPanel;
+  private networkDiagnostics!: NetworkDiagnosticsPanel;
   private wallBodies: MatterJS.Body[] = [];
 
   // Game state & Profile data
@@ -101,8 +120,13 @@ export class GameScene extends Phaser.Scene {
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
     this.player2Group = null;
+    this.opponentAimTargetAngle = 0;
+    this.opponentAimTargetPower = 0;
     this.opponentAimAngle = 0;
     this.opponentAimPower = 0;
+    this.pendingRemoteShotSync = null;
+    this.lastAppliedRemoteShotSyncSequence = -1;
+    this.fallbackRemoteShotSyncSequence = 0;
 
     if (gd.player_number) {
       this.myPlayerNum = gd.player_number;
@@ -151,8 +175,10 @@ export class GameScene extends Phaser.Scene {
     this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
 
     // Start turn timer for break player
-    const activePlayerNum = this.isMyTurn
-      ? this.myPlayerNum
+    const activePlayerNum: 1 | 2 = this.isMyTurn
+      ? this.myPlayerNum === 2
+        ? 2
+        : 1
       : this.myPlayerNum === 1
         ? 2
         : 1;
@@ -187,14 +213,18 @@ export class GameScene extends Phaser.Scene {
         (b as any)[key] = val;
       });
     };
+
+    this.networkDiagnostics = new NetworkDiagnosticsPanel(this);
   }
 
   // ─── Collision handler (pocket detection + first contact) ─
   private setupCollisionHandler(): void {
     this.matter.world.on(
       "collisionstart",
-      (_event: any, bodyA: any, bodyB: any) => {
-        this.handleCollision(bodyA, bodyB);
+      (event: any, bodyA: any, bodyB: any) => {
+        getCollisionPairs(event, bodyA, bodyB).forEach((pair) => {
+          this.handleCollision(pair.bodyA, pair.bodyB);
+        });
       },
     );
   }
@@ -243,12 +273,13 @@ export class GameScene extends Phaser.Scene {
 
   private onBallPocketed(ballNum: number, _body: MatterJS.Body): void {
     if (ballNum === 0) {
+      if (this.cuePocketed) return;
       this.cuePocketed = true;
       this.ballRenderer.respawnCue();
     } else {
-      if (!this.pocketedBalls.includes(ballNum)) {
-        this.pocketedBalls.push(ballNum);
-      }
+      const previousCount = this.pocketedBalls.length;
+      addUniqueNumbers(this.pocketedBalls, [ballNum]);
+      if (this.pocketedBalls.length === previousCount) return;
       this.ballRenderer.pocketBall(ballNum);
     }
   }
@@ -286,10 +317,8 @@ export class GameScene extends Phaser.Scene {
       this.myPlayerNum === 1 ? this.player1Group : this.player2Group;
     if (!ownGroup) return 7;
 
-    const isSolids =
-      ownGroup === "solids" || ownGroup === 1 || (ownGroup as any) === "1";
-    const isStripes =
-      ownGroup === "stripes" || ownGroup === 2 || (ownGroup as any) === "2";
+    const isSolids = ownGroup === "solids";
+    const isStripes = ownGroup === "stripes";
 
     let count = 0;
     this.ballRenderer.getAllBalls().forEach((bd) => {
@@ -459,6 +488,26 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private interpolateOpponentAim(): void {
+    const interpolationSpeed = 0.15;
+    const angleDelta = this.wrapAngle(
+      this.opponentAimTargetAngle - this.opponentAimAngle,
+    );
+    this.opponentAimAngle += angleDelta * interpolationSpeed;
+
+    const powerDelta = this.opponentAimTargetPower - this.opponentAimPower;
+    this.opponentAimPower += powerDelta * interpolationSpeed;
+  }
+
+  private wrapAngle(delta: number): number {
+    const PI = Math.PI;
+    const TWO_PI = 2 * PI;
+    let wrapped = delta % TWO_PI;
+    if (wrapped > PI) wrapped -= TWO_PI;
+    if (wrapped < -PI) wrapped += TWO_PI;
+    return Math.abs(wrapped) < 1e-10 ? 0 : wrapped;
+  }
+
   // ═══════════════════════════════════════════════════════════
   //  SHOT EXECUTION
   // ═══════════════════════════════════════════════════════════
@@ -481,6 +530,7 @@ export class GameScene extends Phaser.Scene {
     this.firstContact = null;
     this.simStartTime = Date.now();
     this.lastSyncTime = 0;
+    this.localShotSyncSequence = 0;
 
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -508,19 +558,26 @@ export class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════
   //  UPDATE LOOP
   // ═══════════════════════════════════════════════════════════
-  update(): void {
+  update(_time: number, delta: number): void {
+    this.applyPendingRemoteShotSync();
+    this.ballRenderer.updateRemotePlayback();
     this.ballRenderer.updateShadows();
     this.hud.updateTimer(); // Update 60s active turn avatar ring frame by frame
+    this.networkDiagnostics.recordFrame(
+      delta,
+      this.isSimulating && !this.isLocalShot,
+      this.ballRenderer.getRemotePlaybackDiagnostics(),
+    );
 
     if (!this.isSimulating) {
       if (this.isMyTurn) {
         this.drawCueStick();
       } else {
+        this.interpolateOpponentAim();
         this.drawOpponentAimAndCue();
       }
     } else {
       this.hud.cueStick.setAlpha(0);
-      this.hud.hideAim();
     }
 
     const MBody = (Phaser.Physics.Matter as any).Matter.Body;
@@ -552,6 +609,8 @@ export class GameScene extends Phaser.Scene {
         this.lastSyncTime = now;
         wsClient.send({
           type: "shot_sync",
+          sequence: ++this.localShotSyncSequence,
+          shot_elapsed_ms: now - this.simStartTime,
           balls: this.ballRenderer.getPhysicsSnapshot(),
         });
       }
@@ -559,7 +618,7 @@ export class GameScene extends Phaser.Scene {
 
     let allSettled = true;
     this.ballRenderer.getAllBalls().forEach((bd) => {
-      const rawBody = bd.sprite.body as any as MatterJS.Body;
+      const rawBody = bd.sprite.body as any;
       if (rawBody && bd.sprite.visible) {
         if (rawBody.speed < 0.18) {
           MBody.setVelocity(rawBody, { x: 0, y: 0 });
@@ -657,7 +716,12 @@ export class GameScene extends Phaser.Scene {
   //  ANIMATE SERVER RESPONSE
   // ═══════════════════════════════════════════════════════════
   private animateShotResult(data: any): void {
+    if (this.isSimulating && !this.isLocalShot) {
+      this.networkDiagnostics.finishRemoteShot();
+    }
+    this.pendingRemoteShotSync = null;
     this.isSimulating = false;
+    this.ballRenderer.endRemotePlayback();
 
     const pocketed: number[] = data.pocketed || [];
     const cuePocketed = data.cue_pocketed || false;
@@ -682,9 +746,9 @@ export class GameScene extends Phaser.Scene {
     const legalPockets = pocketed.filter((b) => b !== 0 && b !== 8);
     if (legalPockets.length > 0) {
       if (shooter === 1) {
-        this.pocketedByPlayer1.push(...legalPockets);
+        addUniqueNumbers(this.pocketedByPlayer1, legalPockets);
       } else {
-        this.pocketedByPlayer2.push(...legalPockets);
+        addUniqueNumbers(this.pocketedByPlayer2, legalPockets);
       }
       this.updateGroupDisplay();
     }
@@ -805,8 +869,8 @@ export class GameScene extends Phaser.Scene {
       )
         return;
 
-      this.opponentAimAngle = (data.angle_deg * Math.PI) / 180;
-      this.opponentAimPower = data.power || 0;
+      this.opponentAimTargetAngle = (data.angle_deg * Math.PI) / 180;
+      this.opponentAimTargetPower = data.power || 0;
     });
 
     wsClient.on("shot_result", (data: any) => {
@@ -819,7 +883,26 @@ export class GameScene extends Phaser.Scene {
 
     wsClient.on("shot_sync", (data: any) => {
       if (!this.isLocalShot && this.isSimulating && data.balls) {
-        this.ballRenderer.applyPhysicsSnapshot(data.balls);
+        const sequence = Number.isInteger(data.sequence)
+          ? data.sequence
+          : ++this.fallbackRemoteShotSyncSequence;
+        if (sequence <= this.lastAppliedRemoteShotSyncSequence) return;
+
+        // Messages can arrive in bursts after a network stall. Retain only
+        // the newest authoritative state, rather than replaying stale updates
+        // over several frames and making the balls visibly catch up.
+        if (
+          !this.pendingRemoteShotSync ||
+          sequence > this.pendingRemoteShotSync.sequence
+        ) {
+          this.pendingRemoteShotSync = {
+            sequence,
+            balls: data.balls as PhysicsSnapshot,
+          };
+        }
+        this.networkDiagnostics.recordShotSync(
+          this.ballRenderer.getRemotePlaybackDiagnostics(),
+        );
       }
     });
 
@@ -919,26 +1002,54 @@ export class GameScene extends Phaser.Scene {
     this.hud.setInfo(LANG.simulating);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
-    if (data.ball_positions) {
-      this.ballRenderer.setPositions(data.ball_positions);
-    }
-
     const angleRad = (data.angle_deg * Math.PI) / 180;
     const power = data.power || 0;
     const cuePos = data.cue_ball_position;
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
-    const matterBody = (cue as any).body;
 
-    if (matterBody) {
-      matterBody.isSleeping = false;
-      if (Array.isArray(cuePos) && cuePos.length === 2) {
-        cue.setPosition(cuePos[0], cuePos[1]);
-      }
-      const speed = power * 2.5;
-      cue.setVelocity(Math.cos(angleRad) * speed, Math.sin(angleRad) * speed);
+    const speed = power * 2.5;
+    const initialSnapshot = data.ball_positions
+      ? Object.fromEntries(
+          Object.entries(data.ball_positions).map(([num, position]) => [
+            num,
+            {
+              pos: position as [number, number],
+              vel:
+                num === "0"
+                  ? ([
+                      Math.cos(angleRad) * speed,
+                      Math.sin(angleRad) * speed,
+                    ] as [number, number])
+                  : ([0, 0] as [number, number]),
+            },
+          ]),
+        )
+      : undefined;
+
+    if (data.ball_positions) {
+      this.ballRenderer.setPositions(data.ball_positions);
+    }
+    if (Array.isArray(cuePos) && cuePos.length === 2) {
+      cue.setPosition(cuePos[0], cuePos[1]);
     }
 
+    this.ballRenderer.beginRemotePlayback(initialSnapshot);
+    this.networkDiagnostics.beginRemoteShot();
+    this.pendingRemoteShotSync = null;
+    this.lastAppliedRemoteShotSyncSequence = -1;
+    this.fallbackRemoteShotSyncSequence = 0;
+
     this.hud.drawOpponentCueStick(cue.x, cue.y, angleRad);
+  }
+
+  /** Applies at most one newest opponent snapshot per render frame. */
+  private applyPendingRemoteShotSync(): void {
+    const pendingSync = this.pendingRemoteShotSync;
+    if (!pendingSync) return;
+
+    this.pendingRemoteShotSync = null;
+    this.lastAppliedRemoteShotSyncSequence = pendingSync.sequence;
+    this.ballRenderer.applyPhysicsSnapshot(pendingSync.balls);
   }
 }

@@ -483,6 +483,8 @@ async def game_websocket(websocket: WebSocket, room_id: str):
                     await broadcast_to_room(room_id, {
                         "type": "shot_sync",
                         "player": player_number,
+                        "sequence": data.get("sequence"),
+                        "shot_elapsed_ms": data.get("shot_elapsed_ms"),
                         "balls": data.get("balls"),
                     }, exclude=player_id)
             elif msg_type == "ping":

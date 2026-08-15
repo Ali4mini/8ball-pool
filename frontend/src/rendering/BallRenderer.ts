@@ -18,6 +18,22 @@ export interface BallData {
   sprite: Phaser.Physics.Matter.Image;
 }
 
+export type PhysicsSnapshot = Record<
+  string,
+  { pos: [number, number]; vel: [number, number] }
+>;
+
+export interface RemotePlaybackDiagnostics {
+  active: boolean;
+  bufferedSnapshots: number;
+  predictionErrorPx: number;
+}
+
+interface TimedPhysicsSnapshot {
+  receivedAt: number;
+  balls: PhysicsSnapshot;
+}
+
 const BALL_COLORS: Record<string, string[]> = {
   classic: [
     "#ffffff", // 0: Cue
@@ -69,8 +85,20 @@ export class BallRenderer {
   private scene: Phaser.Scene;
   private ballMap: Map<number, BallData> = new Map();
   private shadowMap: Map<number, Phaser.GameObjects.Image> = new Map();
+  private pocketedBallNumbers: Set<number> = new Set();
   private cueBall!: BallData;
   private ballSet: string;
+
+  // The local shooter owns the Matter simulation. The other player only
+  // renders a buffered stream of that simulation, so a second physics world
+  // cannot fight the network corrections and produce visible stutter.
+  private remotePlayback = false;
+  private remoteSnapshots: TimedPhysicsSnapshot[] = [];
+  private remotePredictionErrorPx = 0;
+  private readonly REMOTE_INTERPOLATION_DELAY_MS = 60;
+  private readonly REMOTE_MAX_EXTRAPOLATION_MS = 250;
+  // Matter velocity is measured per base physics step, not per second.
+  private readonly MATTER_BASE_STEP_MS = 1000 / 60;
 
   constructor(scene: Phaser.Scene, ballSet: string) {
     this.scene = scene;
@@ -329,7 +357,7 @@ export class BallRenderer {
           shadow.setPosition(sprite.x + 2.5, sprite.y + 3.5);
         }
 
-        const body = sprite.body as MatterJS.Body;
+        const body = sprite.body as any;
         if (body && body.velocity) {
           const vx = body.velocity.x;
           const vy = body.velocity.y;
@@ -348,8 +376,12 @@ export class BallRenderer {
   }
 
   pocketBall(num: number): void {
+    if (this.pocketedBallNumbers.has(num)) return;
+
     const bd = this.ballMap.get(num);
     if (!bd) return;
+
+    this.pocketedBallNumbers.add(num);
     bd.sprite.setVisible(false);
     bd.sprite.setPosition(-100, -100);
     bd.sprite.setVelocity(0, 0);
@@ -461,7 +493,7 @@ export class BallRenderer {
       { pos: [number, number]; vel: [number, number] }
     > = {};
     this.ballMap.forEach((bd) => {
-      const body = bd.sprite.body as MatterJS.Body;
+      const body = bd.sprite.body as any;
       snapshot[String(bd.number)] = {
         pos: [bd.sprite.x, bd.sprite.y],
         vel: body ? [body.velocity.x, body.velocity.y] : [0, 0],
@@ -471,11 +503,163 @@ export class BallRenderer {
   }
 
   /**
-   * Applies physics state (positions and velocities) from shooter tick
+   * Starts display-only playback for an opponent shot. Matter bodies stay in
+   * the world for rendering/collision metadata, but are made static so the
+   * viewer does not run a divergent local simulation.
    */
-  applyPhysicsSnapshot(
-    snapshot: Record<string, { pos: [number, number]; vel: [number, number] }>,
-  ): void {
+  beginRemotePlayback(initialSnapshot?: PhysicsSnapshot): void {
+    this.remotePlayback = true;
+    this.remoteSnapshots = [];
+    this.remotePredictionErrorPx = 0;
+
+    this.ballMap.forEach((bd) => {
+      bd.sprite.setStatic(true);
+      bd.sprite.setVelocity(0, 0);
+    });
+
+    if (initialSnapshot) {
+      this.remoteSnapshots.push({
+        receivedAt: Date.now(),
+        balls: initialSnapshot,
+      });
+    }
+  }
+
+  /** Returns control of the balls to the normal local Matter simulation. */
+  endRemotePlayback(): void {
+    if (!this.remotePlayback) return;
+
+    this.remotePlayback = false;
+    this.remoteSnapshots = [];
+    this.remotePredictionErrorPx = 0;
+    this.ballMap.forEach((bd) => {
+      bd.sprite.setStatic(false);
+      bd.sprite.setVelocity(0, 0);
+    });
+  }
+
+  /**
+   * Queues a shooter tick. The tick is rendered slightly in the past so two
+   * adjacent network samples can be blended instead of snapping between them.
+   */
+  applyPhysicsSnapshot(snapshot: PhysicsSnapshot): void {
+    if (!this.remotePlayback) {
+      this.applyPhysicsSnapshotImmediately(snapshot);
+      return;
+    }
+
+    const receivedAt = Date.now();
+    const previousSnapshot = this.remoteSnapshots.at(-1);
+    this.remotePredictionErrorPx = previousSnapshot
+      ? this.measureSnapshotPredictionError(previousSnapshot, snapshot, receivedAt)
+      : 0;
+
+    this.remoteSnapshots.push({
+      receivedAt,
+      balls: snapshot,
+    });
+
+    // A shooter snapshot contains every ball that is still in play. Removing
+    // missing balls here keeps the viewer in sync even before shot_result.
+    const presentBalls = new Set(Object.keys(snapshot));
+    this.ballMap.forEach((_, num) => {
+      if (!presentBalls.has(String(num))) this.pocketBall(num);
+    });
+
+    // The scene coalesces inbound bursts before calling this method. Two
+    // samples are sufficient for interpolation; retaining older snapshots
+    // would replay stale network state after a delivery stall.
+    if (this.remoteSnapshots.length > 2) this.remoteSnapshots.shift();
+  }
+
+  /** Advances the display-only remote playback once per render frame. */
+  updateRemotePlayback(now = Date.now()): void {
+    if (!this.remotePlayback || this.remoteSnapshots.length === 0) return;
+
+    const renderAt = now - this.REMOTE_INTERPOLATION_DELAY_MS;
+
+    // Discard samples that are fully behind the render point, retaining the
+    // latest one as the interpolation source.
+    while (
+      this.remoteSnapshots.length >= 2 &&
+      this.remoteSnapshots[1].receivedAt <= renderAt
+    ) {
+      this.remoteSnapshots.shift();
+    }
+
+    const from = this.remoteSnapshots[0];
+    const to = this.remoteSnapshots[1];
+    let alpha = 0;
+    if (to) {
+      const duration = to.receivedAt - from.receivedAt;
+      alpha = duration > 0 ? (renderAt - from.receivedAt) / duration : 1;
+      alpha = Math.max(0, Math.min(1, alpha));
+    }
+
+    this.ballMap.forEach((bd) => {
+      const key = String(bd.number);
+      const fromBall = from.balls[key];
+      if (!fromBall) return;
+
+      const toBall = to?.balls[key] || fromBall;
+      const vx = fromBall.vel[0] + (toBall.vel[0] - fromBall.vel[0]) * alpha;
+      const vy = fromBall.vel[1] + (toBall.vel[1] - fromBall.vel[1]) * alpha;
+
+      let x = fromBall.pos[0] + (toBall.pos[0] - fromBall.pos[0]) * alpha;
+      let y = fromBall.pos[1] + (toBall.pos[1] - fromBall.pos[1]) * alpha;
+
+      // If packets arrive late, keep the motion alive briefly using the last
+      // authoritative velocity rather than freezing until the next packet.
+      if (!to && renderAt > from.receivedAt) {
+        const elapsedSteps =
+          Math.min(
+            renderAt - from.receivedAt,
+            this.REMOTE_MAX_EXTRAPOLATION_MS,
+          ) / this.MATTER_BASE_STEP_MS;
+        x = fromBall.pos[0] + fromBall.vel[0] * elapsedSteps;
+        y = fromBall.pos[1] + fromBall.vel[1] * elapsedSteps;
+      }
+
+      bd.sprite.setPosition(x, y);
+      bd.sprite.setVelocity(vx, vy);
+    });
+  }
+
+  getRemotePlaybackDiagnostics(): RemotePlaybackDiagnostics {
+    return {
+      active: this.remotePlayback,
+      bufferedSnapshots: this.remoteSnapshots.length,
+      predictionErrorPx: this.remotePredictionErrorPx,
+    };
+  }
+
+  private measureSnapshotPredictionError(
+    previousSnapshot: TimedPhysicsSnapshot,
+    nextSnapshot: PhysicsSnapshot,
+    receivedAt: number,
+  ): number {
+    const elapsedSteps =
+      (receivedAt - previousSnapshot.receivedAt) / this.MATTER_BASE_STEP_MS;
+    let largestError = 0;
+
+    Object.entries(nextSnapshot).forEach(([num, nextBall]) => {
+      const previousBall = previousSnapshot.balls[num];
+      if (!previousBall) return;
+
+      const expectedX =
+        previousBall.pos[0] + previousBall.vel[0] * elapsedSteps;
+      const expectedY =
+        previousBall.pos[1] + previousBall.vel[1] * elapsedSteps;
+      largestError = Math.max(
+        largestError,
+        Math.hypot(nextBall.pos[0] - expectedX, nextBall.pos[1] - expectedY),
+      );
+    });
+
+    return largestError;
+  }
+
+  private applyPhysicsSnapshotImmediately(snapshot: PhysicsSnapshot): void {
     Object.entries(snapshot).forEach(([numStr, data]) => {
       const num = parseInt(numStr, 10);
       const bd = this.ballMap.get(num);

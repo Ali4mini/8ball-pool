@@ -202,15 +202,15 @@ export class PowerControl {
   private getPowerColor(ratio: number): number {
     if (ratio < 0.5) {
       return Phaser.Display.Color.Interpolate.ColorWithColor(
-        { r: 34, g: 197, b: 94 }, // Green
-        { r: 234, g: 179, b: 8 }, // Yellow
+        new Phaser.Display.Color(34, 197, 94), // Green
+        new Phaser.Display.Color(234, 179, 8), // Yellow
         100,
         ratio * 200,
       ).color;
     } else {
       return Phaser.Display.Color.Interpolate.ColorWithColor(
-        { r: 234, g: 179, b: 8 }, // Yellow
-        { r: 239, g: 68, b: 68 }, // Red
+        new Phaser.Display.Color(234, 179, 8), // Yellow
+        new Phaser.Display.Color(239, 68, 68), // Red
         100,
         (ratio - 0.5) * 200,
       ).color;

@@ -1,0 +1,240 @@
+phaser.js:16707      Phaser v3.90.0 (WebGL | Web Audio)  https://phaser.io/v390
+wsClient.ts:24 [WS] Connected
+NetworkDiagnosticsPanel.ts:207 [8-ball diagnostics] Opponent shot (3996 ms)
+NetworkDiagnosticsPanel.ts:210 Array(1)0: {averageFps: 60.20843707462579, averageFrameMs: 16.60896792189677, worstFrameMs: 16.740000000000144, snapshotCount: 86, snapshotRatePerSecond: 21.52152152152152, …}length: 1[[Prototype]]: Array(0)
+NetworkDiagnosticsPanel.ts:211 Array(86)0: {atMs: 1, gapMs: null, predictionErrorPx: 34.579999999999984, bufferedSnapshots: 2}1: {atMs: 1, gapMs: 0, predictionErrorPx: 101.23551832575993, bufferedSnapshots: 3}2: {atMs: 1, gapMs: 0, predictionErrorPx: 97.6679484737794, bufferedSnapshots: 4}3: {atMs: 1, gapMs: 0, predictionErrorPx: 94.19392611224907, bufferedSnapshots: 5}4: {atMs: 1, gapMs: 0, predictionErrorPx: 90.84347378118446, bufferedSnapshots: 6}5: {atMs: 1, gapMs: 0, predictionErrorPx: 51.755160951516686, bufferedSnapshots: 7}6: {atMs: 67, gapMs: 66, predictionErrorPx: 87.28157977979464, bufferedSnapshots: 7}7: {atMs: 68, gapMs: 1, predictionErrorPx: 74.06776216248781, bufferedSnapshots: 8}8: {atMs: 180, gapMs: 112, predictionErrorPx: 56.77465183958406, bufferedSnapshots: 2}9: {atMs: 250, gapMs: 70, predictionErrorPx: 24.935704695848298, bufferedSnapshots: 2}10: {atMs: 250, gapMs: 0, predictionErrorPx: 24.257853353915937, bufferedSnapshots: 3}11: {atMs: 331, gapMs: 81, predictionErrorPx: 22.574112227864525, bufferedSnapshots: 2}12: {atMs: 331, gapMs: 0, predictionErrorPx: 22.29016140205015, bufferedSnapshots: 3}13: {atMs: 388, gapMs: 57, predictionErrorPx: 21.032502088607167, bufferedSnapshots: 4}14: {atMs: 464, gapMs: 76, predictionErrorPx: 12.319044058195297, bufferedSnapshots: 2}15: {atMs: 480, gapMs: 16, predictionErrorPx: 15.858163035566129, bufferedSnapshots: 3}16: {atMs: 549, gapMs: 69, predictionErrorPx: 15.015786487539604, bufferedSnapshots: 2}17: {atMs: 643, gapMs: 94, predictionErrorPx: 14.355072096721667, bufferedSnapshots: 2}18: {atMs: 643, gapMs: 0, predictionErrorPx: 14.303575528762977, bufferedSnapshots: 3}19: {atMs: 714, gapMs: 71, predictionErrorPx: 13.460361747119194, bufferedSnapshots: 2}20: {atMs: 714, gapMs: 0, predictionErrorPx: 13.304123909935438, bufferedSnapshots: 3}21: {atMs: 785, gapMs: 71, predictionErrorPx: 12.519829059253324, bufferedSnapshots: 2}22: {atMs: 864, gapMs: 79, predictionErrorPx: 12.040698643169717, bufferedSnapshots: 2}23: {atMs: 870, gapMs: 6, predictionErrorPx: 8.03332658824236, bufferedSnapshots: 3}24: {atMs: 953, gapMs: 83, predictionErrorPx: 9.930373561278707, bufferedSnapshots: 2}25: {atMs: 1031, gapMs: 78, predictionErrorPx: 9.597346660538221, bufferedSnapshots: 2}26: {atMs: 1041, gapMs: 10, predictionErrorPx: 9.470202131659464, bufferedSnapshots: 3}27: {atMs: 1113, gapMs: 72, predictionErrorPx: 8.942391556430623, bufferedSnapshots: 2}28: {atMs: 1113, gapMs: 0, predictionErrorPx: 7.833524024359321, bufferedSnapshots: 3}29: {atMs: 1184, gapMs: 71, predictionErrorPx: 6.320513977301502, bufferedSnapshots: 2}30: {atMs: 1266, gapMs: 82, predictionErrorPx: 6.072230131588209, bufferedSnapshots: 2}31: {atMs: 1274, gapMs: 8, predictionErrorPx: 6.008482375510008, bufferedSnapshots: 3}32: {atMs: 1346, gapMs: 72, predictionErrorPx: 5.667778776791119, bufferedSnapshots: 2}33: {atMs: 1431, gapMs: 85, predictionErrorPx: 5.441301369587028, bufferedSnapshots: 2}34: {atMs: 1432, gapMs: 1, predictionErrorPx: 5.402775970972532, bufferedSnapshots: 3}35: {atMs: 1504, gapMs: 72, predictionErrorPx: 5.084232376774508, bufferedSnapshots: 2}36: {atMs: 1517, gapMs: 13, predictionErrorPx: 5.0046627225064615, bufferedSnapshots: 3}37: {atMs: 1585, gapMs: 68, predictionErrorPx: 4.735597333750649, bufferedSnapshots: 2}38: {atMs: 1685, gapMs: 100, predictionErrorPx: 4.516062666071248, bufferedSnapshots: 2}39: {atMs: 1685, gapMs: 0, predictionErrorPx: 4.509407152326085, bufferedSnapshots: 3}40: {atMs: 1767, gapMs: 82, predictionErrorPx: 4.227236639247108, bufferedSnapshots: 2}41: {atMs: 1866, gapMs: 99, predictionErrorPx: 4.052527514256494, bufferedSnapshots: 2}42: {atMs: 1866, gapMs: 0, predictionErrorPx: 4.045125038718547, bufferedSnapshots: 3}43: {atMs: 1917, gapMs: 51, predictionErrorPx: 3.8333024218765313, bufferedSnapshots: 4}44: {atMs: 1917, gapMs: 0, predictionErrorPx: 3.7624749586615076, bufferedSnapshots: 5}45: {atMs: 1998, gapMs: 81, predictionErrorPx: 3.5282818417086355, bufferedSnapshots: 2}46: {atMs: 2066, gapMs: 68, predictionErrorPx: 3.4195114748986826, bufferedSnapshots: 2}47: {atMs: 2066, gapMs: 0, predictionErrorPx: 3.3739434452181194, bufferedSnapshots: 3}48: {atMs: 2401, gapMs: 335, predictionErrorPx: 2.8826996797301923, bufferedSnapshots: 2}49: {atMs: 2401, gapMs: 0, predictionErrorPx: 3.1392636185565532, bufferedSnapshots: 3}50: {atMs: 2401, gapMs: 0, predictionErrorPx: 3.027600865523914, bufferedSnapshots: 4}51: {atMs: 2401, gapMs: 0, predictionErrorPx: 2.91990992624455, bufferedSnapshots: 5}52: {atMs: 2401, gapMs: 0, predictionErrorPx: 2.816049524383802, bufferedSnapshots: 6}53: {atMs: 2401, gapMs: 0, predictionErrorPx: 2.715883408767063, bufferedSnapshots: 7}54: {atMs: 2467, gapMs: 66, predictionErrorPx: 2.560250600698174, bufferedSnapshots: 8}55: {atMs: 2467, gapMs: 0, predictionErrorPx: 2.526113091269828, bufferedSnapshots: 8}56: {atMs: 2554, gapMs: 87, predictionErrorPx: 2.3638852596034634, bufferedSnapshots: 2}57: {atMs: 2631, gapMs: 77, predictionErrorPx: 2.283942950276189, bufferedSnapshots: 2}58: {atMs: 2635, gapMs: 4, predictionErrorPx: 1.4098078414069255, bufferedSnapshots: 3}59: {atMs: 2708, gapMs: 73, predictionErrorPx: 1.3275826281091903, bufferedSnapshots: 3}60: {atMs: 2709, gapMs: 1, predictionErrorPx: 1.3126436926047957, bufferedSnapshots: 4}61: {atMs: 2805, gapMs: 96, predictionErrorPx: 1.2248730355584891, bufferedSnapshots: 2}62: {atMs: 2880, gapMs: 75, predictionErrorPx: 1.1900625331246273, bufferedSnapshots: 2}63: {atMs: 2880, gapMs: 0, predictionErrorPx: 1.177897983289289, bufferedSnapshots: 3}64: {atMs: 2970, gapMs: 90, predictionErrorPx: 1.1010892722779868, bufferedSnapshots: 2}65: {atMs: 3031, gapMs: 61, predictionErrorPx: 1.0727728611257705, bufferedSnapshots: 3}66: {atMs: 3037, gapMs: 6, predictionErrorPx: 1.054458503811907, bufferedSnapshots: 4}67: {atMs: 3117, gapMs: 80, predictionErrorPx: 0.9912023386110809, bufferedSnapshots: 2}68: {atMs: 3117, gapMs: 0, predictionErrorPx: 0.9827925304328584, bufferedSnapshots: 3}69: {atMs: 3187, gapMs: 70, predictionErrorPx: 0.9251793243174835, bufferedSnapshots: 2}70: {atMs: 3268, gapMs: 81, predictionErrorPx: 0.8888374244313297, bufferedSnapshots: 2}71: {atMs: 3273, gapMs: 5, predictionErrorPx: 0.8801004376724006, bufferedSnapshots: 3}72: {atMs: 3354, gapMs: 81, predictionErrorPx: 0.8267305756272334, bufferedSnapshots: 2}73: {atMs: 3443, gapMs: 89, predictionErrorPx: 0.7950839849391182, bufferedSnapshots: 2}74: {atMs: 3447, gapMs: 4, predictionErrorPx: 0.7897565963890864, bufferedSnapshots: 3}75: {atMs: 3537, gapMs: 90, predictionErrorPx: 0.7392676511923103, bufferedSnapshots: 2}76: {atMs: 3537, gapMs: 0, predictionErrorPx: 0.7355776366090724, bufferedSnapshots: 3}77: {atMs: 3585, gapMs: 48, predictionErrorPx: 0.6977858937685301, bufferedSnapshots: 4}78: {atMs: 3669, gapMs: 84, predictionErrorPx: 0.6645554433661418, bufferedSnapshots: 2}79: {atMs: 3673, gapMs: 4, predictionErrorPx: 0.6589423658092373, bufferedSnapshots: 3}80: {atMs: 3758, gapMs: 85, predictionErrorPx: 0.6179028319383035, bufferedSnapshots: 2}81: {atMs: 3829, gapMs: 71, predictionErrorPx: 0.5988581582370481, bufferedSnapshots: 2}82: {atMs: 3847, gapMs: 18, predictionErrorPx: 0.588269000139101, bufferedSnapshots: 3}83: {atMs: 3906, gapMs: 59, predictionErrorPx: 0.5593524963629702, bufferedSnapshots: 3}84: {atMs: 3906, gapMs: 0, predictionErrorPx: 0.5505479973897455, bufferedSnapshots: 4}85: {atMs: 3996, gapMs: 90, predictionErrorPx: 0.16281188892279463, bufferedSnapshots: 2}length: 86[[Prototype]]: Array(0)
+NetworkDiagnosticsPanel.ts:212 Array(16)0: {atMs: 11, fps: 60.00060000600006, averageFrameMs: 16.6665, worstFrameMs: 16.73999999999978, syncRatePerSecond: 6, …}1: {atMs: 277, fps: 59.997900073497455, averageFrameMs: 16.667249999999992, worstFrameMs: 16.73999999999978, syncRatePerSecond: 11, …}2: {atMs: 543, fps: 59.99640021598707, averageFrameMs: 16.66766666666666, worstFrameMs: 16.73999999999978, syncRatePerSecond: 16, …}3: {atMs: 794, fps: 60.00450033752531, averageFrameMs: 16.66541666666667, worstFrameMs: 16.73999999999978, syncRatePerSecond: 22, …}4: {atMs: 1060, fps: 60.000900013500214, averageFrameMs: 16.666416666666663, worstFrameMs: 16.73999999999978, syncRatePerSecond: 21, …}5: {atMs: 1310, fps: 60.00300015000748, averageFrameMs: 16.66583333333334, worstFrameMs: 16.73999999999978, syncRatePerSecond: 21, …}6: {atMs: 1560, fps: 60.0039002535165, averageFrameMs: 16.665583333333327, worstFrameMs: 16.709999999999855, syncRatePerSecond: 20, …}7: {atMs: 1810, fps: 59.99880002399953, averageFrameMs: 16.666999999999998, worstFrameMs: 16.709999999999855, syncRatePerSecond: 19, …}8: {atMs: 2060, fps: 60.00000000000002, averageFrameMs: 16.66666666666666, worstFrameMs: 16.709999999999855, syncRatePerSecond: 19, …}9: {atMs: 2310, fps: 60.001200024000504, averageFrameMs: 16.666333333333327, worstFrameMs: 16.720000000000436, syncRatePerSecond: 16, …}10: {atMs: 2561, fps: 60.001800054001585, averageFrameMs: 16.666166666666676, worstFrameMs: 16.720000000000436, syncRatePerSecond: 20, …}11: {atMs: 2813, fps: 60.00210007350256, averageFrameMs: 16.666083333333336, worstFrameMs: 16.720000000000436, syncRatePerSecond: 21, …}12: {atMs: 3076, fps: 60.001200024000426, averageFrameMs: 16.66633333333335, worstFrameMs: 16.740000000000144, syncRatePerSecond: 19, …}13: {atMs: 3326, fps: 60.000600006000035, averageFrameMs: 16.666500000000006, worstFrameMs: 16.740000000000144, syncRatePerSecond: 24, …}14: {atMs: 3577, fps: 60.0018000540016, averageFrameMs: 16.666166666666673, worstFrameMs: 16.740000000000144, syncRatePerSecond: 20, …}15: {atMs: 3843, fps: 59.999999999999986, averageFrameMs: 16.66666666666667, worstFrameMs: 16.740000000000144, syncRatePerSecond: 20, …}length: 16[[Prototype]]: Array(0)
+NetworkDiagnosticsPanel.ts:213 Copyable JSON: {
+	  "startedAt": "2026-08-15T15:34:41.195Z",
+	    "durationMs": 3996,
+	      "summary": {
+		          "averageFps": 60.20843707462579,
+			      "averageFrameMs": 16.60896792189677,
+			          "worstFrameMs": 16.740000000000144,
+				      "snapshotCount": 86,
+				          "snapshotRatePerSecond": 21.52152152152152,
+					      "averageGapMs": 47,
+					          "jitterMs": 49.55947110765598,
+						      "maxGapMs": 335,
+						          "averagePredictionErrorPx": 13.037674003763922,
+							      "maxPredictionErrorPx": 101.23551832575993,
+							          "maxBufferedSnapshots": 8
+								    },
+								      "snapshots": [
+									          {
+											        "atMs": 1,
+												      "gapMs": null,
+												            "predictionErrorPx": 34.579999999999984,
+													          "bufferedSnapshots": 2
+														      },
+														          {
+																        "atMs": 1,
+																	      "gapMs": 0,
+																	            "predictionErrorPx": 101.23551832575993,
+																		          "bufferedSnapshots": 3
+																			      },
+																			          {
+																					        "atMs": 1,
+																						      "gapMs": 0,
+																						            "predictionErrorPx": 97.6679484737794,
+																							          "bufferedSnapshots": 4
+																								      },
+																								          {
+																										        "atMs": 1,
+																											      "gapMs": 0,
+																											            "predictionErrorPx": 94.19392611224907,
+																												          "bufferedSnapshots": 5
+																													      },
+																													          {
+																															        "atMs": 1,
+																																      "gapMs": 0,
+																																            "predictionErrorPx": 90.84347378118446,
+																																	          "bufferedSnapshots": 6
+																																		      },
+																																		          {
+																																				        "atMs": 1,
+																																					      "gapMs": 0,
+																																					            "predictionErrorPx": 51.755160951516686,
+																																						          "bufferedSnapshots": 7
+																																							      },
+																																							          {
+																																									        "atMs": 67,
+																																										      "gapMs": 66,
+																																										            "predictionErrorPx": 87.28157977979464,
+																																											          "bufferedSnapshots": 7
+																																												      },
+																																												          {
+																																														        "atMs": 68,
+																																															      "gapMs": 1,
+																																															            "predictionErrorPx": 74.06776216248781,
+																																																          "bufferedSnapshots": 8
+																																																	      },
+																																																	          {
+																																																			        "atMs": 180,
+																																																				      "gapMs": 112,
+																																																				            "predictionErrorPx": 56.77465183958406,
+																																																					          "bufferedSnapshots": 2
+																																																						      },
+																																																						          {
+																																																								        "atMs": 250,
+																																																									      "gapMs": 70,
+																																																									            "predictionErrorPx": 24.935704695848298,
+																																																										          "bufferedSnapshots": 2
+																																																											      },
+																																																											          {
+																																																													        "atMs": 250,
+																																																														      "gapMs": 0,
+																																																														            "predictionErrorPx": 24.257853353915937,
+																																																															          "bufferedSnapshots": 3
+																																																																      },
+																																																																          {
+																																																																		        "atMs": 331,
+																																																																			      "gapMs": 81,
+																																																																			            "predictionErrorPx": 22.574112227864525,
+																																																																				          "bufferedSnapshots": 2
+																																																																					      },
+																																																																					          {
+																																																																							        "atMs": 331,
+																																																																								      "gapMs": 0,
+																																																																								            "predictionErrorPx": 22.29016140205015,
+																																																																									          "bufferedSnapshots": 3
+																																																																										      },
+																																																																										          {
+																																																																												        "atMs": 388,
+																																																																													      "gapMs": 57,
+																																																																													            "predictionErrorPx": 21.032502088607167,
+																																																																														          "bufferedSnapshots": 4
+																																																																															      },
+																																																																															          {
+																																																																																	        "atMs": 464,
+																																																																																		      "gapMs": 76,
+																																																																																		            "predictionErrorPx": 12.319044058195297,
+																																																																																			          "bufferedSnapshots": 2
+																																																																																				      },
+																																																																																				          {
+																																																																																						        "atMs": 480,
+																																																																																							      "gapMs": 16,
+																																																																																							            "predictionErrorPx": 15.858163035566129,
+																																																																																								          "bufferedSnapshots": 3
+																																																																																									      },
+																																																																																									          {
+																																																																																											        "atMs": 549,
+																																																																																												      "gapMs": 69,
+																																																																																												            "predictionErrorPx": 15.015786487539604,
+																																																																																													          "bufferedSnapshots": 2
+																																																																																														      },
+																																																																																														          {
+																																																																																																        "atMs": 643,
+																																																																																																	      "gapMs": 94,
+																																																																																																	            "predictionErrorPx": 14.355072096721667,
+																																																																																																		          "bufferedSnapshots": 2
+																																																																																																			      },
+																																																																																																			          {
+																																																																																																					        "atMs": 643,
+																																																																																																						      "gapMs": 0,
+																																																																																																						            "predictionErrorPx": 14.303575528762977,
+																																																																																																							          "bufferedSnapshots": 3
+																																																																																																								      },
+																																																																																																								          {
+																																																																																																										        "atMs": 714,
+																																																																																																											      "gapMs": 71,
+																																																																																																											            "predictionErrorPx": 13.460361747119194,
+																																																																																																												          "bufferedSnapshots": 2
+																																																																																																													      },
+																																																																																																													          {
+																																																																																																															        "atMs": 714,
+																																																																																																																      "gapMs": 0,
+																																																																																																																            "predictionErrorPx": 13.304123909935438,
+																																																																																																																	          "bufferedSnapshots": 3
+																																																																																																																		      },
+																																																																																																																		          {
+																																																																																																																				        "atMs": 785,
+																																																																																																																					      "gapMs": 71,
+																																																																																																																					            "predictionErrorPx": 12.519829059253324,
+																																																																																																																						          "bufferedSnapshots": 2
+																																																																																																																							      },
+																																																																																																																							          {
+																																																																																																																									        "atMs": 864,
+																																																																																																																										      "gapMs": 79,
+																																																																																																																										            "predictionErrorPx": 12.040698643169717,
+																																																																																																																											          "bufferedSnapshots": 2
+																																																																																																																												      },
+																																																																																																																												          {
+																																																																																																																														        "atMs": 870,
+																																																																																																																															      "gapMs": 6,
+																																																																																																																															            "predictionErrorPx": 8.03332658824236,
+																																																																																																																																          "bufferedSnapshots": 3
+																																																																																																																																	      },
+																																																																																																																																	          {
+																																																																																																																																			        "atMs": 953,
+																																																																																																																																				      "gapMs": 83,
+																																																																																																																																				            "predictionErrorPx": 9.930373561278707,
+																																																																																																																																					          "bufferedSnapshots": 2
+																																																																																																																																						      },
+																																																																																																																																						          {
+																																																																																																																																								        "atMs": 1031,
+																																																																																																																																									      "gapMs": 78,
+																																																																																																																																									            "predictionErrorPx": 9.597346660538221,
+																																																																																																																																										          "bufferedSnapshots": 2
+																																																																																																																																											      },
+																																																																																																																																											          {
+																																																																																																																																													        "atMs": 1041,
+																																																																																																																																														      "gapMs": 10,
+																																																																																																																																														            "predictionErrorPx": 9.470202131659464,
+																																																																																																																																															          "bufferedSnapshots": 3
+																																																																																																																																																      },
+																																																																																																																																																          {
+																																																																																																																																																		        "atMs": 1113,
+																																																																																																																																																			      "gapMs": 72,
+																																																																																																																																																			            "predictionErrorPx": 8.942391556430623,
+																																																																																																																																																				          "bufferedSnapshots": 2
+																																																																																																																																																					      },
+																																																																																																																																																					          {
+																																																																																																																																																							        "atMs": 1113,
+																																																																																																																																																								      "gapMs": 0,
+																																																																																																																																																								            "predictionErrorPx": 7.833524024359321,
+																																																																																																																																																									          "bufferedSnapshots": 3
+																																																																																																																																																										      },
+																																																																																																																																																										          {
+																																																																																																																																																												        "atMs": 1184,
+																																																																																																																																																													      "gapMs": 71,
+																																																																																																																																																													            "predictionErrorPx": 6.320513977301502,
+																																																																																																																																																														          "bufferedSnapshots": 2
+																																																																																																																																																															      },
+																																																																																																																																																															          {
+																																																																																																																																																																	        "atMs": 1266,
+																																																																																																																																																																		      "gapMs": 82,
+																																																																																																																																																																		            "predictionErrorPx": 6.072230131588209,
+																																																																																																																																																																			          "bufferedSnapshots": 2
+																																																																																																																																																																				      },
+																																																																																																																																																																				          {
+																																																																																																																																																																						        "atMs": 1274,
+																																																																																																																																																																							      "gapMs": 8,
+																																																																																																																																																																							            "predictionErrorPx": 6.008482375510008,
+																																																																																																																																																																								          "bufferedSnapshots": 3
+																																																																																																																																																																									      },
+																																																																																																																																																																									          {
+																																																																																																																																																																											        "atMs": 1346,
+																																																																																																																																																																												      "gapMs": 72,
+																																																																																																																																																																												            "predictionErrorPx": 5.667778776791119,
+																																																																																																																																																																													          "bufferedSnapshots": 2
+																																																																																																																																																																														      },
+																																																																																																																																																																														          {
+																																																																																																																																																																																        "atMs": 1431,
+																																																																																																																																																																																	      "gapMs": 85,
+																																																																																																																																																																																	            "predictionErrorPx": 5.441301369587028,
+																																																																																																																																																																																		          "bufferedSnapshots": 2
+																																																																																																																																																																																			      },
+																																																																																																																																																																																			          {
+																																																																																																																																																																																					        "atMs": 1432,
+																																																																																																																																																																																						      "gapMs": 1,
+																																																																																																																																																																																						            "predictionErrorPx": 5.402775970972532,
+																																																																																																																																																																																							          "bufferedSnapshots": 3
+																																																																																																																																																																																								      },
+																																																																																																																																																																																								          {
+																																																																																																																																																																																										        "atMs": 1504,
+																																																																																																																																																																																											      "gapMs": 72,
+																																																																																																																																																																																											            "predictionErrorPx": 5.084232376774
+																																																																																																																																																																																												    NetworkDiagnosticsPanel.ts:207 [8-ball diagnostics] Opponent shot (4984 ms)
+																																																																																																																																																																																												    bridge.ts:19 [Bridge] {"type":"game_over","winner":"esd","winner_name":"Alireza","reason":"time_out"}
+
