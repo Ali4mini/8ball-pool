@@ -17,18 +17,18 @@ import {
   CUSHION_W,
 } from "../gameConfig";
 import { TableRenderer } from "../rendering/TableRenderer";
-import {
-  BallRenderer,
-  PhysicsSnapshot,
-} from "../rendering/BallRenderer";
+import { BallRenderer } from "../rendering/BallRenderer";
 import { HUD } from "../rendering/HUD";
 import { PhysicsDebugPanel } from "../rendering/PhysicsDebugPanel";
 import { NetworkDiagnosticsPanel } from "../rendering/NetworkDiagnosticsPanel";
 import { addUniqueNumbers, getCollisionPairs } from "../utils/collisionPairs";
+import { TrajectoryFrame } from "../utils/trajectory";
 
-interface PendingRemoteShotSync {
-  sequence: number;
-  balls: PhysicsSnapshot;
+interface PendingAuthoritativeShotResult {
+  ball_positions: Record<string, [number, number]> | null;
+  pocketed: number[];
+  cuePocketed: boolean;
+  ballInHand: boolean;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -66,13 +66,13 @@ export class GameScene extends Phaser.Scene {
   private firstContact: number | null = null;
   private pocketSensors: MatterJS.Body[] = [];
 
-  // Real-time physics sync stream
-  private lastSyncTime = 0;
-  private readonly SYNC_INTERVAL_MS = 40; // ~25 FPS live physics stream
-  private localShotSyncSequence = 0;
-  private pendingRemoteShotSync: PendingRemoteShotSync | null = null;
-  private lastAppliedRemoteShotSyncSequence = -1;
-  private fallbackRemoteShotSyncSequence = 0;
+  // Trajectory chunk stream (recorded, replayed once fully transferred)
+  private lastChunkSendTime = 0;
+  private readonly TRAJECTORY_CHUNK_INTERVAL_MS = 1000;
+  private shotChunkSequence = 0;
+  private pendingAuthoritativeShotResult: PendingAuthoritativeShotResult | null =
+    null;
+  private remoteShotReplayStarted = false;
 
   // Physics debug overlay
   private debugPanel!: PhysicsDebugPanel;
@@ -124,9 +124,10 @@ export class GameScene extends Phaser.Scene {
     this.opponentAimTargetPower = 0;
     this.opponentAimAngle = 0;
     this.opponentAimPower = 0;
-    this.pendingRemoteShotSync = null;
-    this.lastAppliedRemoteShotSyncSequence = -1;
-    this.fallbackRemoteShotSyncSequence = 0;
+    this.pendingAuthoritativeShotResult = null;
+    this.remoteShotReplayStarted = false;
+    this.lastChunkSendTime = 0;
+    this.shotChunkSequence = 0;
 
     if (gd.player_number) {
       this.myPlayerNum = gd.player_number;
@@ -529,8 +530,9 @@ export class GameScene extends Phaser.Scene {
     this.cuePocketed = false;
     this.firstContact = null;
     this.simStartTime = Date.now();
-    this.lastSyncTime = 0;
-    this.localShotSyncSequence = 0;
+    this.lastChunkSendTime = 0;
+    this.shotChunkSequence = 0;
+    this.ballRenderer.beginTrajectoryRecording();
 
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
@@ -559,8 +561,24 @@ export class GameScene extends Phaser.Scene {
   //  UPDATE LOOP
   // ═══════════════════════════════════════════════════════════
   update(_time: number, delta: number): void {
-    this.applyPendingRemoteShotSync();
     this.ballRenderer.updateRemotePlayback();
+
+    // Start the recorded replay once the trajectory is fully buffered.
+    if (this.pendingAuthoritativeShotResult && !this.remoteShotReplayStarted) {
+      this.remoteShotReplayStarted = this.ballRenderer.startRemoteReplay(
+        Date.now(),
+      );
+    }
+
+    // Apply the authoritative final state once the replay has finished.
+    if (
+      this.pendingAuthoritativeShotResult &&
+      this.ballRenderer.isRemoteReplayFinished()
+    ) {
+      this.finishRemoteShotVisual(this.pendingAuthoritativeShotResult);
+      this.pendingAuthoritativeShotResult = null;
+    }
+
     this.ballRenderer.updateShadows();
     this.hud.updateTimer(); // Update 60s active turn avatar ring frame by frame
     this.networkDiagnostics.recordFrame(
@@ -605,14 +623,19 @@ export class GameScene extends Phaser.Scene {
 
     if (this.isLocalShot) {
       const now = Date.now();
-      if (now - this.lastSyncTime >= this.SYNC_INTERVAL_MS) {
-        this.lastSyncTime = now;
-        wsClient.send({
-          type: "shot_sync",
-          sequence: ++this.localShotSyncSequence,
-          shot_elapsed_ms: now - this.simStartTime,
-          balls: this.ballRenderer.getPhysicsSnapshot(),
-        });
+      this.ballRenderer.recordTrajectoryFrame(now - this.simStartTime);
+
+      if (now - this.lastChunkSendTime >= this.TRAJECTORY_CHUNK_INTERVAL_MS) {
+        this.lastChunkSendTime = now;
+        const frames = this.ballRenderer.takeTrajectoryChunk();
+        if (frames.length > 0) {
+          wsClient.send({
+            type: "shot_chunk",
+            sequence: ++this.shotChunkSequence,
+            shot_elapsed_ms: now - this.simStartTime,
+            frames,
+          });
+        }
       }
     }
 
@@ -652,6 +675,19 @@ export class GameScene extends Phaser.Scene {
     this.isSimulating = false;
 
     const ballPositions = this.ballRenderer.getPositionsSnapshot();
+
+    // Flush any remaining trajectory frames before the authoritative result so
+    // the viewer always buffers the complete trajectory ahead of shot_result.
+    const remainingFrames = this.ballRenderer.takeTrajectoryChunk();
+    if (remainingFrames.length > 0) {
+      wsClient.send({
+        type: "shot_chunk",
+        sequence: ++this.shotChunkSequence,
+        shot_elapsed_ms: Date.now() - this.simStartTime,
+        frames: remainingFrames,
+      });
+    }
+    this.ballRenderer.endTrajectoryRecording();
 
     wsClient.send({
       type: "shoot",
@@ -716,12 +752,11 @@ export class GameScene extends Phaser.Scene {
   //  ANIMATE SERVER RESPONSE
   // ═══════════════════════════════════════════════════════════
   private animateShotResult(data: any): void {
-    if (this.isSimulating && !this.isLocalShot) {
+    const isRemoteViewer = this.isSimulating && !this.isLocalShot;
+
+    if (isRemoteViewer) {
       this.networkDiagnostics.finishRemoteShot();
     }
-    this.pendingRemoteShotSync = null;
-    this.isSimulating = false;
-    this.ballRenderer.endRemotePlayback();
 
     const pocketed: number[] = data.pocketed || [];
     const cuePocketed = data.cue_pocketed || false;
@@ -736,11 +771,32 @@ export class GameScene extends Phaser.Scene {
       this.updateGroupDisplay();
     }
 
-    if (ballPositions) {
-      this.ballRenderer.setPositions(ballPositions);
-    }
+    if (isRemoteViewer) {
+      // The visual final state is applied only after the recorded replay has
+      // finished, so pocketing / cue-respawn line up with the animation.
+      this.pendingAuthoritativeShotResult = {
+        ball_positions: ballPositions,
+        pocketed,
+        cuePocketed,
+        ballInHand,
+      };
+      this.remoteShotReplayStarted = this.ballRenderer.startRemoteReplay(
+        Date.now(),
+      );
+      this.isSimulating = true;
+    } else {
+      if (ballPositions) {
+        this.ballRenderer.setPositions(ballPositions);
+      }
 
-    pocketed.forEach((num: number) => this.ballRenderer.pocketBall(num));
+      pocketed.forEach((num: number) => this.ballRenderer.pocketBall(num));
+
+      if (cuePocketed || ballInHand) {
+        this.ballRenderer.respawnCue();
+      }
+
+      this.isSimulating = false;
+    }
 
     const shooter = data.player || this.myPlayerNum;
     const legalPockets = pocketed.filter((b) => b !== 0 && b !== 8);
@@ -751,10 +807,6 @@ export class GameScene extends Phaser.Scene {
         addUniqueNumbers(this.pocketedByPlayer2, legalPockets);
       }
       this.updateGroupDisplay();
-    }
-
-    if (cuePocketed || ballInHand) {
-      this.ballRenderer.respawnCue();
     }
 
     if (foul) {
@@ -881,29 +933,15 @@ export class GameScene extends Phaser.Scene {
       this.playOpponentShot(data);
     });
 
-    wsClient.on("shot_sync", (data: any) => {
-      if (!this.isLocalShot && this.isSimulating && data.balls) {
-        const sequence = Number.isInteger(data.sequence)
-          ? data.sequence
-          : ++this.fallbackRemoteShotSyncSequence;
-        if (sequence <= this.lastAppliedRemoteShotSyncSequence) return;
+    wsClient.on("shot_chunk", (data: any) => {
+      if (this.isLocalShot || !this.isSimulating) return;
+      const frames = data.frames as TrajectoryFrame[] | undefined;
+      if (!frames || frames.length === 0) return;
 
-        // Messages can arrive in bursts after a network stall. Retain only
-        // the newest authoritative state, rather than replaying stale updates
-        // over several frames and making the balls visibly catch up.
-        if (
-          !this.pendingRemoteShotSync ||
-          sequence > this.pendingRemoteShotSync.sequence
-        ) {
-          this.pendingRemoteShotSync = {
-            sequence,
-            balls: data.balls as PhysicsSnapshot,
-          };
-        }
-        this.networkDiagnostics.recordShotSync(
-          this.ballRenderer.getRemotePlaybackDiagnostics(),
-        );
-      }
+      this.ballRenderer.appendTrajectoryChunk(frames);
+      this.networkDiagnostics.recordChunk(
+        this.ballRenderer.getRemotePlaybackDiagnostics(),
+      );
     });
 
     wsClient.on("groups_assigned", (data: any) => {
@@ -999,33 +1037,13 @@ export class GameScene extends Phaser.Scene {
     this.hud.hideAim();
     this.hud.stopTurnTimer();
     this.hud.setTurnText(LANG.opponentTurn, "#aaaaaa");
-    this.hud.setInfo(LANG.simulating);
+    this.hud.setInfo(LANG.waitingShotData);
     this.hud.updateTurnUI(this.myPlayerNum, false);
 
     const angleRad = (data.angle_deg * Math.PI) / 180;
-    const power = data.power || 0;
     const cuePos = data.cue_ball_position;
     const cue = this.ballRenderer.getCueBallSprite();
     if (!cue) return;
-
-    const speed = power * 2.5;
-    const initialSnapshot = data.ball_positions
-      ? Object.fromEntries(
-          Object.entries(data.ball_positions).map(([num, position]) => [
-            num,
-            {
-              pos: position as [number, number],
-              vel:
-                num === "0"
-                  ? ([
-                      Math.cos(angleRad) * speed,
-                      Math.sin(angleRad) * speed,
-                    ] as [number, number])
-                  : ([0, 0] as [number, number]),
-            },
-          ]),
-        )
-      : undefined;
 
     if (data.ball_positions) {
       this.ballRenderer.setPositions(data.ball_positions);
@@ -1034,22 +1052,30 @@ export class GameScene extends Phaser.Scene {
       cue.setPosition(cuePos[0], cuePos[1]);
     }
 
-    this.ballRenderer.beginRemotePlayback(initialSnapshot);
+    this.ballRenderer.beginRemotePlayback();
+    this.remoteShotReplayStarted = false;
+    this.pendingAuthoritativeShotResult = null;
     this.networkDiagnostics.beginRemoteShot();
-    this.pendingRemoteShotSync = null;
-    this.lastAppliedRemoteShotSyncSequence = -1;
-    this.fallbackRemoteShotSyncSequence = 0;
 
     this.hud.drawOpponentCueStick(cue.x, cue.y, angleRad);
   }
 
-  /** Applies at most one newest opponent snapshot per render frame. */
-  private applyPendingRemoteShotSync(): void {
-    const pendingSync = this.pendingRemoteShotSync;
-    if (!pendingSync) return;
+  /** Applies the server-confirmed final state once the recorded replay ends. */
+  private finishRemoteShotVisual(
+    state: PendingAuthoritativeShotResult,
+  ): void {
+    this.ballRenderer.endRemotePlayback();
 
-    this.pendingRemoteShotSync = null;
-    this.lastAppliedRemoteShotSyncSequence = pendingSync.sequence;
-    this.ballRenderer.applyPhysicsSnapshot(pendingSync.balls);
+    if (state.ball_positions) {
+      this.ballRenderer.setPositions(state.ball_positions);
+    }
+
+    state.pocketed.forEach((num: number) => this.ballRenderer.pocketBall(num));
+
+    if (state.cuePocketed || state.ballInHand) {
+      this.ballRenderer.respawnCue();
+    }
+
+    this.isSimulating = false;
   }
 }

@@ -12,26 +12,22 @@ import {
   PLAY_H,
   RACK_X,
 } from "../gameConfig";
+import {
+  buildTrajectoryFrame,
+  sampleTrajectory,
+  TrajectoryFrame,
+} from "../utils/trajectory";
 
 export interface BallData {
   number: number;
   sprite: Phaser.Physics.Matter.Image;
 }
 
-export type PhysicsSnapshot = Record<
-  string,
-  { pos: [number, number]; vel: [number, number] }
->;
-
 export interface RemotePlaybackDiagnostics {
   active: boolean;
-  bufferedSnapshots: number;
-  predictionErrorPx: number;
-}
-
-interface TimedPhysicsSnapshot {
-  receivedAt: number;
-  balls: PhysicsSnapshot;
+  bufferedFrames: number;
+  progressMs: number;
+  finished: boolean;
 }
 
 const BALL_COLORS: Record<string, string[]> = {
@@ -90,15 +86,20 @@ export class BallRenderer {
   private ballSet: string;
 
   // The local shooter owns the Matter simulation. The other player only
-  // renders a buffered stream of that simulation, so a second physics world
-  // cannot fight the network corrections and produce visible stutter.
+  // renders a recorded trajectory once it has fully arrived, so playback is
+  // purely local and time-based — no network jitter can reach the animation.
   private remotePlayback = false;
-  private remoteSnapshots: TimedPhysicsSnapshot[] = [];
-  private remotePredictionErrorPx = 0;
-  private readonly REMOTE_INTERPOLATION_DELAY_MS = 60;
-  private readonly REMOTE_MAX_EXTRAPOLATION_MS = 250;
-  // Matter velocity is measured per base physics step, not per second.
-  private readonly MATTER_BASE_STEP_MS = 1000 / 60;
+  private trajectoryFrames: TrajectoryFrame[] = [];
+  private replayActive = false;
+  private replayStartedAt = 0;
+  private replayProgressMs = 0;
+  private replayFinished = false;
+
+  // Shooter-side trajectory recording (drained into network chunks).
+  private trajectoryRecording = false;
+  private recordedFrames: TrajectoryFrame[] = [];
+  // Capture at ~30 Hz; the viewer interpolates back up to 60 FPS on playback.
+  private readonly TRAJECTORY_RECORD_INTERVAL_MS = 33;
 
   constructor(scene: Phaser.Scene, ballSet: string) {
     this.scene = scene;
@@ -481,48 +482,86 @@ export class BallRenderer {
     return pos;
   }
 
-  /**
-   * Captures position [x, y] and velocity [vx, vy] for real-time synchronization
-   */
-  getPhysicsSnapshot(): Record<
-    string,
-    { pos: [number, number]; vel: [number, number] }
-  > {
-    const snapshot: Record<
-      string,
-      { pos: [number, number]; vel: [number, number] }
-    > = {};
-    this.ballMap.forEach((bd) => {
-      const body = bd.sprite.body as any;
-      snapshot[String(bd.number)] = {
-        pos: [bd.sprite.x, bd.sprite.y],
-        vel: body ? [body.velocity.x, body.velocity.y] : [0, 0],
-      };
-    });
-    return snapshot;
+  // ═══════════════════════════════════════════════════════════
+  //  TRAJECTORY RECORDING (shooter side)
+  // ═══════════════════════════════════════════════════════════
+
+  beginTrajectoryRecording(): void {
+    this.trajectoryRecording = true;
+    this.recordedFrames = [];
   }
 
+  /** Captures one compact frame per local simulation tick. */
+  recordTrajectoryFrame(tMs: number): void {
+    if (!this.trajectoryRecording) return;
+    const lastT =
+      this.recordedFrames.length > 0
+        ? this.recordedFrames[this.recordedFrames.length - 1].t
+        : Number.NEGATIVE_INFINITY;
+    if (tMs - lastT < this.TRAJECTORY_RECORD_INTERVAL_MS) return;
+    this.recordedFrames.push(
+      buildTrajectoryFrame(tMs, this.getPositionsSnapshot()),
+    );
+  }
+
+  /** Returns every frame recorded since the last call (and clears them). */
+  takeTrajectoryChunk(): TrajectoryFrame[] {
+    const chunk = this.recordedFrames;
+    this.recordedFrames = [];
+    return chunk;
+  }
+
+  endTrajectoryRecording(): void {
+    this.trajectoryRecording = false;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  TRAJECTORY REPLAY (viewer side)
+  // ═══════════════════════════════════════════════════════════
+
   /**
-   * Starts display-only playback for an opponent shot. Matter bodies stay in
+   * Prepares display-only playback for an opponent shot. Matter bodies stay in
    * the world for rendering/collision metadata, but are made static so the
-   * viewer does not run a divergent local simulation.
+   * viewer does not run a divergent local simulation. Nothing animates until
+   * the full trajectory has been buffered and startRemoteReplay() is called.
    */
-  beginRemotePlayback(initialSnapshot?: PhysicsSnapshot): void {
+  beginRemotePlayback(): void {
     this.remotePlayback = true;
-    this.remoteSnapshots = [];
-    this.remotePredictionErrorPx = 0;
+    this.trajectoryFrames = [];
+    this.replayActive = false;
+    this.replayStartedAt = 0;
+    this.replayProgressMs = 0;
+    this.replayFinished = false;
 
     this.ballMap.forEach((bd) => {
       bd.sprite.setStatic(true);
       bd.sprite.setVelocity(0, 0);
     });
+  }
 
-    if (initialSnapshot) {
-      this.remoteSnapshots.push({
-        receivedAt: Date.now(),
-        balls: initialSnapshot,
-      });
+  /** Buffers trajectory frames as they arrive. TCP ordering guarantees order. */
+  appendTrajectoryChunk(frames: TrajectoryFrame[]): void {
+    if (!this.remotePlayback || frames.length === 0) return;
+    this.trajectoryFrames.push(...frames);
+  }
+
+  /** Begins time-based replay. Returns false if the trajectory is not ready. */
+  startRemoteReplay(nowMs: number): boolean {
+    if (
+      !this.remotePlayback ||
+      this.replayActive ||
+      this.trajectoryFrames.length === 0
+    ) {
+      return false;
     }
+    this.replayActive = true;
+    this.replayStartedAt = nowMs;
+    this.replayFinished = false;
+    return true;
+  }
+
+  isRemoteReplayFinished(): boolean {
+    return this.replayActive && this.replayFinished;
   }
 
   /** Returns control of the balls to the normal local Matter simulation. */
@@ -530,149 +569,49 @@ export class BallRenderer {
     if (!this.remotePlayback) return;
 
     this.remotePlayback = false;
-    this.remoteSnapshots = [];
-    this.remotePredictionErrorPx = 0;
+    this.trajectoryFrames = [];
+    this.replayActive = false;
+    this.replayStartedAt = 0;
+    this.replayProgressMs = 0;
+    this.replayFinished = false;
+
     this.ballMap.forEach((bd) => {
       bd.sprite.setStatic(false);
       bd.sprite.setVelocity(0, 0);
     });
   }
 
-  /**
-   * Queues a shooter tick. The tick is rendered slightly in the past so two
-   * adjacent network samples can be blended instead of snapping between them.
-   */
-  applyPhysicsSnapshot(snapshot: PhysicsSnapshot): void {
-    if (!this.remotePlayback) {
-      this.applyPhysicsSnapshotImmediately(snapshot);
-      return;
-    }
-
-    const receivedAt = Date.now();
-    const previousSnapshot = this.remoteSnapshots.at(-1);
-    this.remotePredictionErrorPx = previousSnapshot
-      ? this.measureSnapshotPredictionError(previousSnapshot, snapshot, receivedAt)
-      : 0;
-
-    this.remoteSnapshots.push({
-      receivedAt,
-      balls: snapshot,
-    });
-
-    // A shooter snapshot contains every ball that is still in play. Removing
-    // missing balls here keeps the viewer in sync even before shot_result.
-    const presentBalls = new Set(Object.keys(snapshot));
-    this.ballMap.forEach((_, num) => {
-      if (!presentBalls.has(String(num))) this.pocketBall(num);
-    });
-
-    // The scene coalesces inbound bursts before calling this method. Two
-    // samples are sufficient for interpolation; retaining older snapshots
-    // would replay stale network state after a delivery stall.
-    if (this.remoteSnapshots.length > 2) this.remoteSnapshots.shift();
-  }
-
-  /** Advances the display-only remote playback once per render frame. */
+  /** Advances the display-only remote replay once per render frame. */
   updateRemotePlayback(now = Date.now()): void {
-    if (!this.remotePlayback || this.remoteSnapshots.length === 0) return;
+    if (!this.remotePlayback || !this.replayActive) return;
 
-    const renderAt = now - this.REMOTE_INTERPOLATION_DELAY_MS;
+    const elapsed = now - this.replayStartedAt;
+    const sampled = sampleTrajectory(this.trajectoryFrames, elapsed);
+    this.replayProgressMs = elapsed;
+    this.replayFinished = sampled.finished;
 
-    // Discard samples that are fully behind the render point, retaining the
-    // latest one as the interpolation source.
-    while (
-      this.remoteSnapshots.length >= 2 &&
-      this.remoteSnapshots[1].receivedAt <= renderAt
-    ) {
-      this.remoteSnapshots.shift();
-    }
-
-    const from = this.remoteSnapshots[0];
-    const to = this.remoteSnapshots[1];
-    let alpha = 0;
-    if (to) {
-      const duration = to.receivedAt - from.receivedAt;
-      alpha = duration > 0 ? (renderAt - from.receivedAt) / duration : 1;
-      alpha = Math.max(0, Math.min(1, alpha));
-    }
-
+    // Any ball absent from the current frame was pocketed. Hiding here keeps
+    // the viewer in sync with the recorded trajectory in real time.
+    const presentBalls = new Set(sampled.balls.map((b) => b.num));
     this.ballMap.forEach((bd) => {
-      const key = String(bd.number);
-      const fromBall = from.balls[key];
-      if (!fromBall) return;
+      if (!presentBalls.has(bd.number)) this.pocketBall(bd.number);
+    });
 
-      const toBall = to?.balls[key] || fromBall;
-      const vx = fromBall.vel[0] + (toBall.vel[0] - fromBall.vel[0]) * alpha;
-      const vy = fromBall.vel[1] + (toBall.vel[1] - fromBall.vel[1]) * alpha;
-
-      let x = fromBall.pos[0] + (toBall.pos[0] - fromBall.pos[0]) * alpha;
-      let y = fromBall.pos[1] + (toBall.pos[1] - fromBall.pos[1]) * alpha;
-
-      // If packets arrive late, keep the motion alive briefly using the last
-      // authoritative velocity rather than freezing until the next packet.
-      if (!to && renderAt > from.receivedAt) {
-        const elapsedSteps =
-          Math.min(
-            renderAt - from.receivedAt,
-            this.REMOTE_MAX_EXTRAPOLATION_MS,
-          ) / this.MATTER_BASE_STEP_MS;
-        x = fromBall.pos[0] + fromBall.vel[0] * elapsedSteps;
-        y = fromBall.pos[1] + fromBall.vel[1] * elapsedSteps;
-      }
-
-      bd.sprite.setPosition(x, y);
-      bd.sprite.setVelocity(vx, vy);
+    sampled.balls.forEach((b) => {
+      const bd = this.ballMap.get(b.num);
+      if (!bd) return;
+      bd.sprite.setPosition(b.x, b.y);
+      bd.sprite.setVelocity(b.vx, b.vy);
     });
   }
 
   getRemotePlaybackDiagnostics(): RemotePlaybackDiagnostics {
     return {
       active: this.remotePlayback,
-      bufferedSnapshots: this.remoteSnapshots.length,
-      predictionErrorPx: this.remotePredictionErrorPx,
+      bufferedFrames: this.trajectoryFrames.length,
+      progressMs: this.replayProgressMs,
+      finished: this.replayFinished,
     };
-  }
-
-  private measureSnapshotPredictionError(
-    previousSnapshot: TimedPhysicsSnapshot,
-    nextSnapshot: PhysicsSnapshot,
-    receivedAt: number,
-  ): number {
-    const elapsedSteps =
-      (receivedAt - previousSnapshot.receivedAt) / this.MATTER_BASE_STEP_MS;
-    let largestError = 0;
-
-    Object.entries(nextSnapshot).forEach(([num, nextBall]) => {
-      const previousBall = previousSnapshot.balls[num];
-      if (!previousBall) return;
-
-      const expectedX =
-        previousBall.pos[0] + previousBall.vel[0] * elapsedSteps;
-      const expectedY =
-        previousBall.pos[1] + previousBall.vel[1] * elapsedSteps;
-      largestError = Math.max(
-        largestError,
-        Math.hypot(nextBall.pos[0] - expectedX, nextBall.pos[1] - expectedY),
-      );
-    });
-
-    return largestError;
-  }
-
-  private applyPhysicsSnapshotImmediately(snapshot: PhysicsSnapshot): void {
-    Object.entries(snapshot).forEach(([numStr, data]) => {
-      const num = parseInt(numStr, 10);
-      const bd = this.ballMap.get(num);
-      if (bd && bd.sprite.visible) {
-        bd.sprite.setPosition(data.pos[0], data.pos[1]);
-        bd.sprite.setVelocity(data.vel[0], data.vel[1]);
-
-        const shadow = this.shadowMap.get(num);
-        if (shadow) {
-          shadow.setPosition(data.pos[0] + 2.5, data.pos[1] + 3.5);
-        }
-      }
-    });
   }
 
   setPositions(ballPositions: Record<string, [number, number]>): void {

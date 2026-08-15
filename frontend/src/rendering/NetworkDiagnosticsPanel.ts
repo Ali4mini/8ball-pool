@@ -4,8 +4,8 @@ import { RemotePlaybackDiagnostics } from "./BallRenderer";
 interface SyncSample {
   atMs: number;
   gapMs: number | null;
-  predictionErrorPx: number;
-  bufferedSnapshots: number;
+  bufferedFrames: number;
+  progressMs: number;
 }
 
 interface PerformanceSample {
@@ -33,14 +33,12 @@ export interface RemoteShotDiagnosticsLog {
     averageFps: number;
     averageFrameMs: number;
     worstFrameMs: number;
-    snapshotCount: number;
-    snapshotRatePerSecond: number;
+    chunkCount: number;
+    chunkRatePerSecond: number;
     averageGapMs: number;
     jitterMs: number;
     maxGapMs: number;
-    averagePredictionErrorPx: number;
-    maxPredictionErrorPx: number;
-    maxBufferedSnapshots: number;
+    maxBufferedFrames: number;
   };
   snapshots: SyncSample[];
   performance: PerformanceSample[];
@@ -95,7 +93,7 @@ export class NetworkDiagnosticsPanel {
     };
   }
 
-  recordShotSync(
+  recordChunk(
     remotePlayback: RemotePlaybackDiagnostics,
     receivedAt = Date.now(),
   ): void {
@@ -110,8 +108,8 @@ export class NetworkDiagnosticsPanel {
         activeShot.lastSyncAt === null
           ? null
           : receivedAt - activeShot.lastSyncAt,
-      predictionErrorPx: remotePlayback.predictionErrorPx,
-      bufferedSnapshots: remotePlayback.bufferedSnapshots,
+      bufferedFrames: remotePlayback.bufferedFrames,
+      progressMs: remotePlayback.progressMs,
     });
     activeShot.lastSyncAt = receivedAt;
   }
@@ -157,8 +155,8 @@ export class NetworkDiagnosticsPanel {
         ? `gap: ${stats.averageGapMs.toFixed(1)} ms | jitter: ${stats.jitterMs.toFixed(1)} ms | max: ${stats.maxGapMs.toFixed(1)} ms`
         : "gap: --",
       isRemoteViewer
-        ? `prediction error: ${remotePlayback.predictionErrorPx.toFixed(1)} px | buffer: ${remotePlayback.bufferedSnapshots}`
-        : "prediction error: --",
+        ? `replay: ${remotePlayback.progressMs.toFixed(0)} ms | ${remotePlayback.finished ? "done" : "playing"} | buffered: ${remotePlayback.bufferedFrames}`
+        : "replay: --",
     ]);
   }
 
@@ -171,8 +169,8 @@ export class NetworkDiagnosticsPanel {
     const gaps = activeShot.syncSamples
       .map((sample) => sample.gapMs)
       .filter((gap): gap is number => gap !== null);
-    const predictionErrors = activeShot.syncSamples.map(
-      (sample) => sample.predictionErrorPx,
+    const bufferedFrames = activeShot.syncSamples.map(
+      (sample) => sample.bufferedFrames,
     );
     const averageFrameMs = this.average(activeShot.frameDurations);
     const averageGapMs = this.average(gaps);
@@ -183,18 +181,15 @@ export class NetworkDiagnosticsPanel {
         averageFps: averageFrameMs > 0 ? 1000 / averageFrameMs : 0,
         averageFrameMs,
         worstFrameMs: Math.max(...activeShot.frameDurations, 0),
-        snapshotCount: activeShot.syncSamples.length,
-        snapshotRatePerSecond:
-          durationMs > 0 ? (activeShot.syncSamples.length * 1000) / durationMs : 0,
+        chunkCount: activeShot.syncSamples.length,
+        chunkRatePerSecond:
+          durationMs > 0
+            ? (activeShot.syncSamples.length * 1000) / durationMs
+            : 0,
         averageGapMs,
         jitterMs: this.standardDeviation(gaps, averageGapMs),
         maxGapMs: Math.max(...gaps, 0),
-        averagePredictionErrorPx: this.average(predictionErrors),
-        maxPredictionErrorPx: Math.max(...predictionErrors, 0),
-        maxBufferedSnapshots: Math.max(
-          ...activeShot.syncSamples.map((sample) => sample.bufferedSnapshots),
-          0,
-        ),
+        maxBufferedFrames: Math.max(...bufferedFrames, 0),
       },
       snapshots: activeShot.syncSamples,
       performance: activeShot.performanceSamples,

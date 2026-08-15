@@ -28,6 +28,7 @@ export const LANG = {
   shootHint: 'رها کن تا شلیک شود',
   waitingOpponent: 'منتظر حریف...',
   simulating: 'شبیه‌سازی...',
+  waitingShotData: 'در حال دریافت ضربه حریف...',
   waitingServer: 'منتظر سرور...',
   shoot: 'شلیک',
 
