@@ -20,6 +20,7 @@ import { TableRenderer } from "../rendering/TableRenderer";
 import { BallRenderer } from "../rendering/BallRenderer";
 import { HUD } from "../rendering/HUD";
 import { PhysicsDebugPanel } from "../rendering/PhysicsDebugPanel";
+import { addUniqueNumbers, getCollisionPairs } from "../utils/collisionPairs";
 
 export class GameScene extends Phaser.Scene {
   // Ball renderer
@@ -32,13 +33,17 @@ export class GameScene extends Phaser.Scene {
   private aimPower = 0;
   private isAiming = false;
 
-  // Opponent aim state (for real-time rendering)
+  // Opponent aim state (raw received from network, not yet interpolated)
+  private opponentAimTargetAngle = 0;
+  private opponentAimTargetPower = 0;
+
+  // Smoothed opponent aim state (interpolated every render frame)
   private opponentAimAngle = 0;
   private opponentAimPower = 0;
 
   // Real-time aim sync stream
   private lastAimSendTime = 0;
-  private readonly AIM_SYNC_INTERVAL_MS = 50; // ~20 FPS aiming sync
+  private readonly AIM_SYNC_INTERVAL_MS = 25; // ~40 FPS aiming sync
 
   // Simulation settle state
   private isSimulating = false;
@@ -101,6 +106,8 @@ export class GameScene extends Phaser.Scene {
     this.pocketedByPlayer2 = [];
     this.player1Group = null;
     this.player2Group = null;
+    this.opponentAimTargetAngle = 0;
+    this.opponentAimTargetPower = 0;
     this.opponentAimAngle = 0;
     this.opponentAimPower = 0;
 
@@ -151,8 +158,10 @@ export class GameScene extends Phaser.Scene {
     this.hud.updateTurnUI(this.myPlayerNum, this.isMyTurn);
 
     // Start turn timer for break player
-    const activePlayerNum = this.isMyTurn
-      ? this.myPlayerNum
+    const activePlayerNum: 1 | 2 = this.isMyTurn
+      ? this.myPlayerNum === 2
+        ? 2
+        : 1
       : this.myPlayerNum === 1
         ? 2
         : 1;
@@ -193,8 +202,10 @@ export class GameScene extends Phaser.Scene {
   private setupCollisionHandler(): void {
     this.matter.world.on(
       "collisionstart",
-      (_event: any, bodyA: any, bodyB: any) => {
-        this.handleCollision(bodyA, bodyB);
+      (event: any, bodyA: any, bodyB: any) => {
+        getCollisionPairs(event, bodyA, bodyB).forEach((pair) => {
+          this.handleCollision(pair.bodyA, pair.bodyB);
+        });
       },
     );
   }
@@ -243,12 +254,13 @@ export class GameScene extends Phaser.Scene {
 
   private onBallPocketed(ballNum: number, _body: MatterJS.Body): void {
     if (ballNum === 0) {
+      if (this.cuePocketed) return;
       this.cuePocketed = true;
       this.ballRenderer.respawnCue();
     } else {
-      if (!this.pocketedBalls.includes(ballNum)) {
-        this.pocketedBalls.push(ballNum);
-      }
+      const previousCount = this.pocketedBalls.length;
+      addUniqueNumbers(this.pocketedBalls, [ballNum]);
+      if (this.pocketedBalls.length === previousCount) return;
       this.ballRenderer.pocketBall(ballNum);
     }
   }
@@ -286,10 +298,8 @@ export class GameScene extends Phaser.Scene {
       this.myPlayerNum === 1 ? this.player1Group : this.player2Group;
     if (!ownGroup) return 7;
 
-    const isSolids =
-      ownGroup === "solids" || ownGroup === 1 || (ownGroup as any) === "1";
-    const isStripes =
-      ownGroup === "stripes" || ownGroup === 2 || (ownGroup as any) === "2";
+    const isSolids = ownGroup === "solids";
+    const isStripes = ownGroup === "stripes";
 
     let count = 0;
     this.ballRenderer.getAllBalls().forEach((bd) => {
@@ -459,6 +469,26 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private interpolateOpponentAim(): void {
+    const interpolationSpeed = 0.15;
+    const angleDelta = this.wrapAngle(
+      this.opponentAimTargetAngle - this.opponentAimAngle,
+    );
+    this.opponentAimAngle += angleDelta * interpolationSpeed;
+
+    const powerDelta = this.opponentAimTargetPower - this.opponentAimPower;
+    this.opponentAimPower += powerDelta * interpolationSpeed;
+  }
+
+  private wrapAngle(delta: number): number {
+    const PI = Math.PI;
+    const TWO_PI = 2 * PI;
+    let wrapped = delta % TWO_PI;
+    if (wrapped > PI) wrapped -= TWO_PI;
+    if (wrapped < -PI) wrapped += TWO_PI;
+    return Math.abs(wrapped) < 1e-10 ? 0 : wrapped;
+  }
+
   // ═══════════════════════════════════════════════════════════
   //  SHOT EXECUTION
   // ═══════════════════════════════════════════════════════════
@@ -516,6 +546,7 @@ export class GameScene extends Phaser.Scene {
       if (this.isMyTurn) {
         this.drawCueStick();
       } else {
+        this.interpolateOpponentAim();
         this.drawOpponentAimAndCue();
       }
     } else {
@@ -559,7 +590,7 @@ export class GameScene extends Phaser.Scene {
 
     let allSettled = true;
     this.ballRenderer.getAllBalls().forEach((bd) => {
-      const rawBody = bd.sprite.body as any as MatterJS.Body;
+      const rawBody = bd.sprite.body as any;
       if (rawBody && bd.sprite.visible) {
         if (rawBody.speed < 0.18) {
           MBody.setVelocity(rawBody, { x: 0, y: 0 });
@@ -682,9 +713,9 @@ export class GameScene extends Phaser.Scene {
     const legalPockets = pocketed.filter((b) => b !== 0 && b !== 8);
     if (legalPockets.length > 0) {
       if (shooter === 1) {
-        this.pocketedByPlayer1.push(...legalPockets);
+        addUniqueNumbers(this.pocketedByPlayer1, legalPockets);
       } else {
-        this.pocketedByPlayer2.push(...legalPockets);
+        addUniqueNumbers(this.pocketedByPlayer2, legalPockets);
       }
       this.updateGroupDisplay();
     }
@@ -805,8 +836,8 @@ export class GameScene extends Phaser.Scene {
       )
         return;
 
-      this.opponentAimAngle = (data.angle_deg * Math.PI) / 180;
-      this.opponentAimPower = data.power || 0;
+      this.opponentAimTargetAngle = (data.angle_deg * Math.PI) / 180;
+      this.opponentAimTargetPower = data.power || 0;
     });
 
     wsClient.on("shot_result", (data: any) => {

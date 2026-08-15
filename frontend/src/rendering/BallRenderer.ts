@@ -69,6 +69,7 @@ export class BallRenderer {
   private scene: Phaser.Scene;
   private ballMap: Map<number, BallData> = new Map();
   private shadowMap: Map<number, Phaser.GameObjects.Image> = new Map();
+  private pocketedBallNumbers: Set<number> = new Set();
   private cueBall!: BallData;
   private ballSet: string;
 
@@ -329,7 +330,7 @@ export class BallRenderer {
           shadow.setPosition(sprite.x + 2.5, sprite.y + 3.5);
         }
 
-        const body = sprite.body as MatterJS.Body;
+        const body = sprite.body as any;
         if (body && body.velocity) {
           const vx = body.velocity.x;
           const vy = body.velocity.y;
@@ -348,8 +349,12 @@ export class BallRenderer {
   }
 
   pocketBall(num: number): void {
+    if (this.pocketedBallNumbers.has(num)) return;
+
     const bd = this.ballMap.get(num);
     if (!bd) return;
+
+    this.pocketedBallNumbers.add(num);
     bd.sprite.setVisible(false);
     bd.sprite.setPosition(-100, -100);
     bd.sprite.setVelocity(0, 0);
@@ -461,7 +466,7 @@ export class BallRenderer {
       { pos: [number, number]; vel: [number, number] }
     > = {};
     this.ballMap.forEach((bd) => {
-      const body = bd.sprite.body as MatterJS.Body;
+      const body = bd.sprite.body as any;
       snapshot[String(bd.number)] = {
         pos: [bd.sprite.x, bd.sprite.y],
         vel: body ? [body.velocity.x, body.velocity.y] : [0, 0],
