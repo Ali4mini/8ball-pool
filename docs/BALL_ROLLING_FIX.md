@@ -21,6 +21,8 @@ Each ball stores its previous rendered position. On every render update:
 
 The shared helper is `frontend/src/utils/rolling.ts`. It uses a continuous trigonometric function of the 2D travel angle as a lightweight screen-space approximation. A small phase offset keeps horizontal, vertical, and diagonal directions visibly active while reversing the movement reverses the spin; there is no dominant-axis boundary where the sign can abruptly switch.
 
+Because a single scalar screen-space rotation cannot be both continuous and reversal-symmetric without crossing zero somewhere, two travel angles intentionally produce zero visual rotation. This is the accepted tradeoff for the current 2D renderer: it preserves physically consistent reversal and avoids directional jitter, while a richer multi-axis visual model would be required to eliminate every zero crossing.
+
 ### Stationary and repositioned balls
 
 Movement at or below the rolling epsilon produces no rotation. Large position jumps are treated as teleports rather than travelled distance, preventing artificial rotation when a ball is corrected or moved outside the table.
@@ -41,7 +43,7 @@ Matter.js physics parameters were not changed. The renderer still uses the live 
 
 - `frontend/src/rendering/BallRenderer.ts` — tracks rendered positions, applies rolling deltas, and resets state during ball lifecycle transitions.
 - `frontend/src/utils/rolling.ts` — contains the testable rolling calculation.
-- `frontend/tests/rolling.test.ts` — covers cardinal and diagonal movement, direction reversal, stationary movement, distance scaling, and continuity around the 45-degree diagonal.
+- `frontend/tests/rolling.test.ts` — covers cardinal and diagonal movement, direction reversal, stationary movement, distance scaling, continuity around the 45-degree diagonal, and the documented zero crossings.
 
 ## Verification
 

@@ -27,6 +27,28 @@ describe("calculateRollDelta", () => {
     expect(Math.abs(justBefore - justAfter)).toBeLessThan(0.01);
   });
 
+  it("preserves the unavoidable zero crossings of the signed 2D mapping", () => {
+    const distance = 5;
+    const radius = 5;
+    const angleA = (5 * Math.PI) / 8;
+    const angleB = (-3 * Math.PI) / 8;
+
+    expect(
+      calculateRollDelta(
+        distance * Math.cos(angleA),
+        distance * Math.sin(angleA),
+        radius,
+      ),
+    ).toBeCloseTo(0);
+    expect(
+      calculateRollDelta(
+        distance * Math.cos(angleB),
+        distance * Math.sin(angleB),
+        radius,
+      ),
+    ).toBeCloseTo(0);
+  });
+
   it("stops rotating for stationary or nearly stationary movement", () => {
     expect(calculateRollDelta(0, 0, 5)).toBe(0);
     expect(calculateRollDelta(0.005, 0.005, 5)).toBe(0);
