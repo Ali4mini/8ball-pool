@@ -20,6 +20,12 @@ export class BootScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const params = new URLSearchParams(window.location.search);
 
+    // Isolated renderer playground: intentionally does not connect to the game.
+    if (params.get('scene') === 'ball-lab') {
+      this.scene.start('BallAnimationLabScene');
+      return;
+    }
+
     // Debug: skip to GameScene directly with practice data
     if (params.get('scene') === 'game') {
       const mockData = {

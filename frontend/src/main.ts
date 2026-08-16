@@ -8,6 +8,7 @@ import { BootScene } from './scenes/BootScene';
 import { WaitingScene } from './scenes/WaitingScene';
 import { GameScene } from './scenes/GameScene';
 import { ResultScene } from './scenes/ResultScene';
+import { BallAnimationLabScene } from './scenes/BallAnimationLabScene';
 import { GAME_W, GAME_H } from './gameConfig';
 
 // Fixed game world with margin around the table.
@@ -40,7 +41,7 @@ const config: Phaser.Types.Core.GameConfig = {
   roundPixels: false,
   // resolution: use type assertion — property exists at runtime but missing from phaser 3.80 types
   ...({ resolution: Math.min(window.devicePixelRatio || 1, 2) } as any),
-  scene: [BootScene, WaitingScene, GameScene, ResultScene],
+  scene: [BootScene, WaitingScene, GameScene, ResultScene, BallAnimationLabScene],
   input: {
     activePointers: 2,
   },
