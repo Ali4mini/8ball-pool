@@ -23,6 +23,7 @@ export class RollingBall {
   private readonly radius: number;
   private readonly ball: Phaser.GameObjects.Graphics;
   private readonly surface: Phaser.GameObjects.Graphics;
+  private readonly numberPatch: Phaser.GameObjects.Graphics;
   private readonly numberText: Phaser.GameObjects.Text;
   private distance = 0;
   private visualRotation = 0;
@@ -38,13 +39,14 @@ export class RollingBall {
 
     this.ball = scene.add.graphics();
     this.surface = scene.add.graphics();
+    this.numberPatch = scene.add.graphics();
     this.numberText = scene.add.text(0, 0, options.number ?? "8", {
       color: "#111827",
       fontFamily: "Arial, sans-serif",
       fontSize: `${Math.round(this.radius * 0.45)}px`,
       fontStyle: "bold",
     }).setOrigin(0.5);
-    this.container.add([this.ball, this.surface, this.numberText]);
+    this.container.add([this.ball, this.surface, this.numberPatch, this.numberText]);
     this.container.setDepth(2);
     this.drawBase(color);
     this.drawSurface("directional");
@@ -88,7 +90,12 @@ export class RollingBall {
     const r = this.radius;
     const phase = this.distance / r;
     this.surface.clear();
+    this.numberPatch.clear();
     this.numberText.setPosition(0, 0).setScale(1).setRotation(0);
+    this.numberPatch.setVisible(model !== "baseline");
+    this.numberText.setVisible(model !== "baseline");
+    this.numberPatch.setAlpha(1);
+    this.numberText.setAlpha(1);
 
     if (model === "baseline") {
       this.numberText.setPosition(r * 0.1, -r * 0.02);
@@ -98,19 +105,41 @@ export class RollingBall {
     if (model === "displacement") {
       const marker = Math.sin(phase) * r * 0.52;
       this.numberText.setPosition(marker, -r * 0.04);
-      this.numberText.setScale(Math.max(0.16, Math.cos(phase)) , 1);
+      const facing = Math.max(0, Math.cos(phase));
+      this.numberText.setScale(Math.max(0.02, facing), 1);
+      this.numberText.setAlpha(facing);
+      this.numberPatch
+        .fillStyle(0xffffff, facing)
+        .fillEllipse(marker, -r * 0.04, r * 0.92 * facing, r * 0.92);
       this.surface.lineStyle(3, 0xffffff, 0.28).lineBetween(marker, -r * 0.65, marker, r * 0.65);
       return;
     }
 
-    // The apparent equator is perpendicular to travel. Its changing width,
-    // plus the patch crossing the surface, gives a lightweight pseudo-3D cue.
-    const width = Math.max(3, Math.abs(Math.cos(phase)) * r * 1.7);
+    // A marking is a small surface patch, not a second sprite on top of the
+    // ball. `facing` is the dot product between its simulated normal and the
+    // camera direction. Back-facing patches are occluded by the sphere;
+    // front-facing patches are foreshortened by their projected width.
+    const facing = Math.max(0, Math.cos(phase));
+    const patchX = Math.sin(phase) * r * 0.48;
+    const patchHeight = r * 0.92;
+    const patchWidth = patchHeight * facing;
+    const visibility = Phaser.Math.Clamp((facing - 0.03) / 0.17, 0, 1);
+
+    this.numberPatch
+      .fillStyle(0xffffff, visibility)
+      .fillEllipse(patchX, -r * 0.03, patchWidth, patchHeight);
+    this.numberText.setPosition(patchX, -r * 0.03);
+    this.numberText.setScale(Math.max(0.01, facing), 1);
+    this.numberText.setAlpha(visibility);
+    this.numberPatch.setVisible(visibility > 0);
+    this.numberText.setVisible(visibility > 0);
+
+    // The apparent equator is perpendicular to travel. Its changing width
+    // provides an additional spherical cue without changing the ball body.
+    const width = Math.max(3, facing * r * 1.7);
     this.surface.setRotation(this.heading + Math.PI / 2);
     this.surface.lineStyle(4, 0xf8fafc, 0.62).strokeEllipse(0, 0, width, r * 1.65);
     this.surface.lineStyle(2, 0x06101d, 0.25).strokeEllipse(0, 0, width * 0.72, r * 1.7);
     this.surface.setRotation(0);
-    this.numberText.setPosition(Math.sin(phase) * r * 0.48, -r * 0.03);
-    this.numberText.setScale(Math.max(0.18, Math.abs(Math.cos(phase))), 1);
   }
 }
