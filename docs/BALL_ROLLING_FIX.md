@@ -19,7 +19,7 @@ Each ball stores its previous rendered position. On every render update:
 3. Convert distance to visual rotation using `distance / BALL_RADIUS`.
 4. Use the complete movement vector to determine the visual spin direction.
 
-The shared helper is `frontend/src/utils/rolling.ts`. It treats the dominant component of the 2D movement vector as the screen-space rolling direction. This keeps horizontal, vertical, and all diagonal directions visually active while reversing the movement reverses the spin.
+The shared helper is `frontend/src/utils/rolling.ts`. It uses a continuous trigonometric function of the 2D travel angle as a lightweight screen-space approximation. A small phase offset keeps horizontal, vertical, and diagonal directions visibly active while reversing the movement reverses the spin; there is no dominant-axis boundary where the sign can abruptly switch.
 
 ### Stationary and repositioned balls
 
@@ -41,7 +41,7 @@ Matter.js physics parameters were not changed. The renderer still uses the live 
 
 - `frontend/src/rendering/BallRenderer.ts` — tracks rendered positions, applies rolling deltas, and resets state during ball lifecycle transitions.
 - `frontend/src/utils/rolling.ts` — contains the testable rolling calculation.
-- `frontend/tests/rolling.test.ts` — covers cardinal and diagonal movement, direction reversal, stationary movement, and distance scaling.
+- `frontend/tests/rolling.test.ts` — covers cardinal and diagonal movement, direction reversal, stationary movement, distance scaling, and continuity around the 45-degree diagonal.
 
 ## Verification
 
