@@ -17,6 +17,7 @@ import {
   sampleTrajectory,
   TrajectoryFrame,
 } from "../utils/trajectory";
+import { calculateRollDelta } from "../utils/rolling";
 
 export interface BallData {
   number: number;
@@ -94,6 +95,12 @@ export class BallRenderer {
   private replayStartedAt = 0;
   private replayProgressMs = 0;
   private replayFinished = false;
+
+  // Last rendered positions used to make rotation proportional to actual
+  // movement rather than to render frequency or reported velocity.
+  private previousRenderPositions = new Map<number, { x: number; y: number }>();
+  private readonly ROLLING_EPSILON = 0.01;
+  private readonly TELEPORT_DISTANCE = BALL_RADIUS * 4;
 
   // Shooter-side trajectory recording (drained into network chunks).
   private trajectoryRecording = false;
@@ -297,6 +304,7 @@ export class BallRenderer {
 
   createBalls(): void {
     this.ballMap.clear();
+    this.previousRenderPositions.clear();
     this.shadowMap.forEach((s) => s.destroy());
     this.shadowMap.clear();
 
@@ -343,6 +351,7 @@ export class BallRenderer {
 
       const bd: BallData = { number: num, sprite: img };
       this.ballMap.set(num, bd);
+      this.previousRenderPositions.set(num, { x, y });
       if (num === 0) this.cueBall = bd;
     });
   }
@@ -353,25 +362,30 @@ export class BallRenderer {
       const sprite = bd.sprite;
 
       if (sprite.visible && sprite.x > -50) {
+        const previous = this.previousRenderPositions.get(num);
+        const dx = previous ? sprite.x - previous.x : 0;
+        const dy = previous ? sprite.y - previous.y : 0;
+        const distance = Math.hypot(dx, dy);
+        this.previousRenderPositions.set(num, { x: sprite.x, y: sprite.y });
+
         if (shadow) {
           shadow.setVisible(true);
           shadow.setPosition(sprite.x + 2.5, sprite.y + 3.5);
         }
 
-        const body = sprite.body as any;
-        if (body && body.velocity) {
-          const vx = body.velocity.x;
-          const vy = body.velocity.y;
-          const speed = Math.hypot(vx, vy);
-
-          if (speed > 0.08) {
-            const rollDirection = vx >= 0 ? 1 : -1;
-            const rollSpeed = (speed / BALL_RADIUS) * 0.22;
-            sprite.rotation += rollSpeed * rollDirection;
-          }
+        // A large jump is a reposition/teleport (for example a safety
+        // correction outside the table), not a travelled rolling distance.
+        if (distance <= this.TELEPORT_DISTANCE) {
+          sprite.rotation += calculateRollDelta(
+            dx,
+            dy,
+            BALL_RADIUS,
+            this.ROLLING_EPSILON,
+          );
         }
       } else if (shadow) {
         shadow.setVisible(false);
+        this.previousRenderPositions.delete(num);
       }
     });
   }
@@ -392,6 +406,7 @@ export class BallRenderer {
     if (shadow) shadow.setVisible(false);
 
     this.ballMap.delete(num);
+    this.previousRenderPositions.delete(num);
   }
 
   respawnCue(): void {
@@ -405,6 +420,10 @@ export class BallRenderer {
     cue.sprite.setVelocity(0, 0);
     const rawBody = cue.sprite.body as any;
     rawBody.isStatic = false;
+    this.previousRenderPositions.set(0, {
+      x: CUE_SPOT_X,
+      y: CUE_SPOT_Y,
+    });
 
     const shadow = this.shadowMap.get(0);
     if (shadow) {
@@ -444,6 +463,10 @@ export class BallRenderer {
 
     this.cueBall = { number: 0, sprite: img };
     this.ballMap.set(0, this.cueBall);
+    this.previousRenderPositions.set(0, {
+      x: CUE_SPOT_X,
+      y: CUE_SPOT_Y,
+    });
   }
 
   getBall(num: number): BallData | undefined {
@@ -536,6 +559,10 @@ export class BallRenderer {
     this.ballMap.forEach((bd) => {
       bd.sprite.setStatic(true);
       bd.sprite.setVelocity(0, 0);
+      this.previousRenderPositions.set(bd.number, {
+        x: bd.sprite.x,
+        y: bd.sprite.y,
+      });
     });
   }
 
@@ -578,6 +605,10 @@ export class BallRenderer {
     this.ballMap.forEach((bd) => {
       bd.sprite.setStatic(false);
       bd.sprite.setVelocity(0, 0);
+      this.previousRenderPositions.set(bd.number, {
+        x: bd.sprite.x,
+        y: bd.sprite.y,
+      });
     });
   }
 
@@ -621,6 +652,7 @@ export class BallRenderer {
       if (bd) {
         bd.sprite.setPosition(x, y);
         bd.sprite.setVelocity(0, 0);
+        this.previousRenderPositions.set(num, { x, y });
       }
       const shadow = this.shadowMap.get(num);
       if (shadow) shadow.setPosition(x + 2.5, y + 3.5);
