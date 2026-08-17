@@ -354,6 +354,40 @@ export class BallRenderer {
     });
   }
 
+  /** Restore the complete rack without recreating the Phaser scene. */
+  resetRack(): void {
+    this.ballMap.forEach((bd) => {
+      this.scene.matter.world.remove(bd.sprite.body as MatterJS.Body);
+      bd.visual.container.destroy();
+    });
+    this.shadowMap.forEach((shadow) => shadow.destroy());
+    this.ballMap.clear();
+    this.shadowMap.clear();
+    this.pocketedBallNumbers.clear();
+    this.previousRenderPositions.clear();
+    this.remotePlayback = false;
+    this.trajectoryFrames = [];
+    this.replayActive = false;
+    this.trajectoryRecording = false;
+    this.recordedFrames = [];
+    this.createBalls();
+  }
+
+  /** Remove every object ball while leaving the cue available for testing. */
+  pocketAll(): void {
+    [...this.ballMap.keys()].filter((num) => num !== 0).forEach((num) => this.pocketBall(num));
+  }
+
+  /** Clear a ball's simulation and visual rolling state at its current spot. */
+  stopAll(): void {
+    this.ballMap.forEach((bd) => {
+      bd.sprite.setVelocity(0, 0);
+      bd.sprite.setAngularVelocity(0);
+      bd.visual.reset();
+      this.previousRenderPositions.set(bd.number, { x: bd.sprite.x, y: bd.sprite.y });
+    });
+  }
+
   updateShadows(): void {
     this.ballMap.forEach((bd, num) => {
       const shadow = this.shadowMap.get(num);

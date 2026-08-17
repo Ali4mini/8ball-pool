@@ -26,6 +26,11 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
+    if (params.get('scene') === 'table-lab') {
+      this.scene.start('TableGameLabScene');
+      return;
+    }
+
     // Debug: skip to GameScene directly with practice data
     if (params.get('scene') === 'game') {
       const mockData = {

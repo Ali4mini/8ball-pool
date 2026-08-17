@@ -29,15 +29,15 @@ export class PhysicsDebugPanel {
   onApplySettle: (val: number) => void = () => {};
 
   private ballParams: ParamDef[] = [
-    { key: 'frictionAir', label: 'FrictionAir', val: 0.015, min: 0.001, max: 0.05, step: 0.001, fmt: v => v.toFixed(3) },
-    { key: 'restitution', label: 'Restitution', val: 0.9, min: 0.3, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
-    { key: 'friction', label: 'Friction', val: 0.02, min: 0.001, max: 0.15, step: 0.002, fmt: v => v.toFixed(3) },
+    { key: 'frictionAir', label: 'Air drag', val: 0.012, min: 0.001, max: 0.05, step: 0.001, fmt: v => v.toFixed(3) },
+    { key: 'restitution', label: 'Restitution', val: 0.88, min: 0.3, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
+    { key: 'friction', label: 'Friction', val: 0.015, min: 0.001, max: 0.15, step: 0.002, fmt: v => v.toFixed(3) },
     { key: 'density', label: 'Density', val: 0.005, min: 0.001, max: 0.02, step: 0.001, fmt: v => v.toFixed(3) },
-    { key: 'slop', label: 'Slop', val: 0.05, min: 0.01, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
+    { key: 'slop', label: 'Slop', val: 0, min: 0, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
   ];
   private wallParams: ParamDef[] = [
-    { key: 'restitution', label: 'Wall Rest', val: 0.7, min: 0.3, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
-    { key: 'friction', label: 'Wall Fric', val: 0.08, min: 0.01, max: 0.3, step: 0.01, fmt: v => v.toFixed(2) },
+    { key: 'restitution', label: 'Cushion rest', val: 0.85, min: 0.3, max: 1.0, step: 0.05, fmt: v => v.toFixed(2) },
+    { key: 'friction', label: 'Cushion fric', val: 0.05, min: 0.01, max: 0.3, step: 0.01, fmt: v => v.toFixed(2) },
   ];
   private sysParams: ParamDef[] = [
     { key: 'settleSpeed', label: 'Settle Spd', val: 0.8, min: 0.1, max: 10, step: 0.2, fmt: v => v.toFixed(1) },
@@ -105,20 +105,22 @@ export class PhysicsDebugPanel {
   }
 
   private resetAll(): void {
-    const ballDefaults: Record<string, number> = { frictionAir: 0.015, restitution: 0.9, friction: 0.02, density: 0.005, slop: 0.05 };
-    const wallDefaults: Record<string, number> = { restitution: 0.7, friction: 0.08 };
+    const ballDefaults: Record<string, number> = { frictionAir: 0.012, restitution: 0.88, friction: 0.015, density: 0.005, slop: 0 };
+    const wallDefaults: Record<string, number> = { restitution: 0.85, friction: 0.05 };
     for (const d of this.ballParams) { d.val = ballDefaults[d.key]; this.onApplyBall(d.key, d.val); }
     for (const d of this.wallParams) { d.val = wallDefaults[d.key]; this.onApplyWall(d.key, d.val); }
     for (const d of this.sysParams) { d.val = 0.8; if (d.key === 'settleSpeed') this.onApplySettle(0.8); }
     this.refresh();
   }
 
+  resetDefaults(): void { this.resetAll(); }
+
   private refresh(): void {
     let idx = 0;
     const all = [...this.ballParams, ...this.wallParams, ...this.sysParams];
     // In the flat array: title, then groups of [label, dec, valText, inc]
     for (const p of all) {
-      const valText = this.elements[idx * 3 + 2]; // groups of 3 after title
+      const valText = this.elements[idx * 4 + 2];
       if (valText) (valText as Phaser.GameObjects.Text).setText(p.fmt(p.val));
       idx++;
     }
@@ -129,6 +131,12 @@ export class PhysicsDebugPanel {
     for (const el of this.elements) (el as any).setVisible(this.visible);
     if (this.visible) this.drawBg();
   }
+
+  setVisible(visible: boolean): void {
+    if (this.visible !== visible) this.toggle();
+  }
+
+  isVisible(): boolean { return this.visible; }
 
   private drawBg(): void {
     const { width } = this.scene.scale;
