@@ -10,6 +10,7 @@ export class BallAnimationLabScene extends Phaser.Scene {
   private playing = true;
   private reverse = false;
   private model: RollingModel = "directional";
+  private ballRadius = 88;
   private ballPosition = new Phaser.Math.Vector2(430, 310);
   private joystickCenter = new Phaser.Math.Vector2(108, 238);
   private joystickRadius = 62;
@@ -32,7 +33,7 @@ export class BallAnimationLabScene extends Phaser.Scene {
     for (let x = 280; x < width - 50; x += 56) stage.lineBetween(x, 145, x, height - 56);
     for (let y = 160; y < height - 55; y += 56) stage.lineBetween(268, y, width - 58, y);
 
-    this.ball = new RollingBall(this, this.ballPosition.x, this.ballPosition.y, { radius: 88, color: 0x1677c8 });
+    this.ball = new RollingBall(this, this.ballPosition.x, this.ballPosition.y, { radius: this.ballRadius, color: 0x1677c8 });
     this.directionLine = this.add.graphics().setDepth(5);
     this.drawJoystick();
     this.createControls(width);
@@ -73,15 +74,36 @@ export class BallAnimationLabScene extends Phaser.Scene {
       button.on("pointerover", () => button.setColor("#fbbf24"));
       button.on("pointerout", () => button.setColor(model === this.model ? "#fbbf24" : "#c4d2e1"));
     });
-    this.add.text(panelX, 460, "SPEED", { fontSize: "12px", color: "#7f9bb8", fontStyle: "bold" });
-    const speedBar = this.add.rectangle(panelX + 4, 486, 190, 8, 0x29445f).setOrigin(0, 0.5).setInteractive();
-    const speedFill = this.add.rectangle(panelX + 4, 486, this.speed / 360 * 190, 8, 0xf97316).setOrigin(0, 0.5);
+    const typeButton = this.add.text(panelX, 430, "BALL: Solid", { fontSize: "13px", color: "#fbbf24", backgroundColor: "#1d3854", padding: { x: 10, y: 5 } }).setInteractive({ useHandCursor: true });
+    typeButton.on("pointerdown", () => {
+      this.ball.setStriped(!this.ball.isStriped());
+      typeButton.setText(`BALL: ${this.ball.isStriped() ? "Striped" : "Solid"}`);
+    });
+
+    this.add.text(panelX, 460, "BALL SIZE", { fontSize: "12px", color: "#7f9bb8", fontStyle: "bold" });
+    const sizeBar = this.add.rectangle(panelX + 4, 477, 190, 8, 0x29445f).setOrigin(0, 0.5).setInteractive();
+    const sizeFill = this.add.rectangle(panelX + 4, 477, (this.ballRadius - 48) / 72 * 190, 8, 0x38bdf8).setOrigin(0, 0.5);
+    const sizeLabel = this.add.text(panelX + 202, 467, `${this.ballRadius}px`, { fontSize: "11px", color: "#c4d2e1" });
+    const updateSize = (pointerX: number): void => {
+      this.ballRadius = Phaser.Math.Clamp(48 + ((pointerX - (panelX + 4)) / 190) * 72, 48, 120);
+      this.ball.setRadius(this.ballRadius);
+      sizeFill.width = (this.ballRadius - 48) / 72 * 190;
+      sizeLabel.setText(`${Math.round(this.ballRadius)}px`);
+    };
+    sizeBar.on("pointerdown", (pointer: Phaser.Input.Pointer) => updateSize(pointer.x));
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.isDown && pointer.x >= panelX && pointer.x <= panelX + 198 && pointer.y >= 459 && pointer.y <= 493) updateSize(pointer.x);
+    });
+
+    this.add.text(panelX, 497, "SPEED", { fontSize: "12px", color: "#7f9bb8", fontStyle: "bold" });
+    const speedBar = this.add.rectangle(panelX + 4, 514, 190, 8, 0x29445f).setOrigin(0, 0.5).setInteractive();
+    const speedFill = this.add.rectangle(panelX + 4, 514, this.speed / 360 * 190, 8, 0xf97316).setOrigin(0, 0.5);
     speedBar.on("pointerdown", (pointer: Phaser.Input.Pointer) => { this.speed = Phaser.Math.Clamp(((pointer.x - (panelX + 4)) / 190) * 360, 0, 360); speedFill.width = this.speed / 360 * 190; this.updateReadout(); });
-    const play = this.add.text(panelX, 510, "Ⅱ  Pause", { fontSize: "14px", color: "#f8fafc", backgroundColor: "#1d3854", padding: { x: 12, y: 8 } }).setInteractive({ useHandCursor: true });
+    const play = this.add.text(panelX, 532, "Ⅱ  Pause", { fontSize: "13px", color: "#f8fafc", backgroundColor: "#1d3854", padding: { x: 10, y: 6 } }).setInteractive({ useHandCursor: true });
     play.on("pointerdown", () => { this.playing = !this.playing; play.setText(this.playing ? "Ⅱ  Pause" : "▶  Play"); });
-    const reverse = this.add.text(panelX + 104, 510, "↔ Reverse", { fontSize: "14px", color: "#f8fafc", backgroundColor: "#1d3854", padding: { x: 12, y: 8 } }).setInteractive({ useHandCursor: true });
+    const reverse = this.add.text(panelX + 104, 532, "↔ Reverse", { fontSize: "13px", color: "#f8fafc", backgroundColor: "#1d3854", padding: { x: 10, y: 6 } }).setInteractive({ useHandCursor: true });
     reverse.on("pointerdown", () => { this.reverse = !this.reverse; reverse.setColor(this.reverse ? "#fbbf24" : "#f8fafc"); });
-    const reset = this.add.text(panelX, 550, "Reset position and roll", { fontSize: "13px", color: "#fbbf24", backgroundColor: "#3b2811", padding: { x: 12, y: 8 } }).setInteractive({ useHandCursor: true });
+    const reset = this.add.text(panelX, 565, "Reset position and roll", { fontSize: "12px", color: "#fbbf24", backgroundColor: "#3b2811", padding: { x: 10, y: 4 } }).setInteractive({ useHandCursor: true });
     reset.on("pointerdown", () => { this.ballPosition.set(430, 310); this.direction = -Math.PI / 6; this.ball.container.setPosition(this.ballPosition.x, this.ballPosition.y); this.ball.reset(); });
     this.readout = this.add.text(width - 350, 145, "", { fontSize: "14px", color: "#dbeafe", backgroundColor: "#0b1b2d", padding: { x: 14, y: 10 } });
     this.updateReadout();

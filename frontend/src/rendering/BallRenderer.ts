@@ -17,11 +17,12 @@ import {
   sampleTrajectory,
   TrajectoryFrame,
 } from "../utils/trajectory";
-import { calculateRollDelta } from "../utils/rolling";
+import { RollingBall } from "./RollingBall";
 
 export interface BallData {
   number: number;
   sprite: Phaser.Physics.Matter.Image;
+  visual: RollingBall;
 }
 
 export interface RemotePlaybackDiagnostics {
@@ -99,7 +100,6 @@ export class BallRenderer {
   // Last rendered positions used to make rotation proportional to actual
   // movement rather than to render frequency or reported velocity.
   private previousRenderPositions = new Map<number, { x: number; y: number }>();
-  private readonly ROLLING_EPSILON = 0.01;
   private readonly TELEPORT_DISTANCE = BALL_RADIUS * 4;
 
   // Shooter-side trajectory recording (drained into network chunks).
@@ -147,7 +147,9 @@ export class BallRenderer {
         this.draw3DSphere(ctx, r, lighterColor, mainColor, darkerColor);
         this.drawNumberPatch(ctx, r, String(num), "#111111");
       } else {
-        this.draw3DSphere(ctx, r, "#ffffff", "#f1f5f9", "#cbd5e1");
+        const lighterColor = this.adjustColor(mainColor, 40);
+        const darkerColor = this.adjustColor(mainColor, -50);
+        this.draw3DSphere(ctx, r, lighterColor, mainColor, darkerColor);
 
         ctx.save();
         ctx.beginPath();
@@ -155,9 +157,9 @@ export class BallRenderer {
         ctx.clip();
 
         const stripeGrad = ctx.createLinearGradient(0, r - 7, 0, r + 7);
-        stripeGrad.addColorStop(0, this.adjustColor(mainColor, 20));
-        stripeGrad.addColorStop(0.5, mainColor);
-        stripeGrad.addColorStop(1, this.adjustColor(mainColor, -40));
+        stripeGrad.addColorStop(0, "#ffffff");
+        stripeGrad.addColorStop(0.5, "#f8fafc");
+        stripeGrad.addColorStop(1, "#dbe3ed");
 
         ctx.fillStyle = stripeGrad;
         ctx.fillRect(0, r - 6.5, d, 13);
@@ -224,9 +226,6 @@ export class BallRenderer {
     ctx.arc(r, r, r - 0.5, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
   }
 
   private drawNumberPatch(
@@ -344,12 +343,11 @@ export class BallRenderer {
         enableSleeping: false,
       } as any);
       img.setDepth(2);
+      img.setAlpha(0);
 
-      if (num !== 0) {
-        img.setRotation((Phaser.Math.Between(0, 360) * Math.PI) / 180);
-      }
+      const visual = this.createVisualBall(num, x, y);
 
-      const bd: BallData = { number: num, sprite: img };
+      const bd: BallData = { number: num, sprite: img, visual };
       this.ballMap.set(num, bd);
       this.previousRenderPositions.set(num, { x, y });
       if (num === 0) this.cueBall = bd;
@@ -361,12 +359,14 @@ export class BallRenderer {
       const shadow = this.shadowMap.get(num);
       const sprite = bd.sprite;
 
-      if (sprite.visible && sprite.x > -50) {
+      if (bd.visual.container.visible && sprite.x > -50) {
         const previous = this.previousRenderPositions.get(num);
         const dx = previous ? sprite.x - previous.x : 0;
         const dy = previous ? sprite.y - previous.y : 0;
         const distance = Math.hypot(dx, dy);
         this.previousRenderPositions.set(num, { x: sprite.x, y: sprite.y });
+        bd.visual.container.setPosition(sprite.x, sprite.y);
+        bd.visual.container.setVisible(true);
 
         if (shadow) {
           shadow.setVisible(true);
@@ -376,15 +376,13 @@ export class BallRenderer {
         // A large jump is a reposition/teleport (for example a safety
         // correction outside the table), not a travelled rolling distance.
         if (distance <= this.TELEPORT_DISTANCE) {
-          sprite.rotation += calculateRollDelta(
-            dx,
-            dy,
-            BALL_RADIUS,
-            this.ROLLING_EPSILON,
-          );
+          bd.visual.update(dx, dy, "directional");
+        } else {
+          bd.visual.reset();
         }
       } else if (shadow) {
         shadow.setVisible(false);
+        bd.visual.container.setVisible(false);
         this.previousRenderPositions.delete(num);
       }
     });
@@ -398,6 +396,7 @@ export class BallRenderer {
 
     this.pocketedBallNumbers.add(num);
     bd.sprite.setVisible(false);
+    bd.visual.container.setVisible(false);
     bd.sprite.setPosition(-100, -100);
     bd.sprite.setVelocity(0, 0);
     (bd.sprite.body as any).isStatic = true;
@@ -416,7 +415,11 @@ export class BallRenderer {
       cue = this.ballMap.get(0)!;
     }
     cue.sprite.setVisible(true);
+    cue.sprite.setAlpha(0);
+    cue.visual.container.setVisible(true);
     cue.sprite.setPosition(CUE_SPOT_X, CUE_SPOT_Y);
+    cue.visual.container.setPosition(CUE_SPOT_X, CUE_SPOT_Y);
+    cue.visual.reset();
     cue.sprite.setVelocity(0, 0);
     const rawBody = cue.sprite.body as any;
     rawBody.isStatic = false;
@@ -461,7 +464,9 @@ export class BallRenderer {
     );
     img.setDepth(2);
 
-    this.cueBall = { number: 0, sprite: img };
+    img.setAlpha(0);
+    const visual = this.createVisualBall(0, CUE_SPOT_X, CUE_SPOT_Y);
+    this.cueBall = { number: 0, sprite: img, visual };
     this.ballMap.set(0, this.cueBall);
     this.previousRenderPositions.set(0, {
       x: CUE_SPOT_X,
@@ -483,6 +488,18 @@ export class BallRenderer {
 
   getAllBalls(): Map<number, BallData> {
     return this.ballMap;
+  }
+
+  private createVisualBall(num: number, x: number, y: number): RollingBall {
+    const colors = BALL_COLORS[this.ballSet] || BALL_COLORS.classic;
+    const color = parseInt(colors[num].replace("#", ""), 16);
+    return new RollingBall(this.scene, x, y, {
+      radius: BALL_RADIUS,
+      color,
+      number: num === 0 ? "" : String(num),
+      striped: num >= 9,
+      showShadow: false,
+    });
   }
 
   countByGroup(group: "solids" | "stripes" | null): number {
@@ -652,6 +669,8 @@ export class BallRenderer {
       if (bd) {
         bd.sprite.setPosition(x, y);
         bd.sprite.setVelocity(0, 0);
+        bd.visual.container.setPosition(x, y);
+        bd.visual.reset();
         this.previousRenderPositions.set(num, { x, y });
       }
       const shadow = this.shadowMap.get(num);
